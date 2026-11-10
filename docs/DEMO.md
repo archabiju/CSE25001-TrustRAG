@@ -68,4 +68,4 @@ Recorded automatically in `demo/outputs/versions.txt`. Key settings from `config
 
 - The 109-claim benchmark is a development set; the held-out RAGTruth evaluation is the external result.
 - Without Ollama the answer text is the retrieved passage, not LLM-written.
-- The paper's 9,800-chunk figures are not reproduced by this repository; see `REVIEW2_RUNBOOK.md`.
+- The paper's 9,800-chunk figures are not reproduced by this repository; the saved results in `evaluation/results/` are the measured values.
