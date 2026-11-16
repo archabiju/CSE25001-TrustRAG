@@ -228,7 +228,7 @@ def build():
     add_p(doc, "Reviewer 2 asked why HNSW and hybrid memory sit at or above FlatIP if FlatIP is described as the largest index.", italic=True)
     add_p(
         doc,
-        "docs/10_PANEL_QA_COMPLETE.md already states the size formula: 9,800 chunks of 384-dimensional float32 vectors are about 15 MB, not 384 MB. The saved exact index is data/index/faiss.index. The submitted 384 MB, 57 MB, 412 MB, and 421 MB values are not files in the repository. requirements.txt installs faiss-cpu, and the retrieval code contains no GPU or multi-thread comparison, which is the hardware point raised by Reviewer 2.",
+        "guides/10_PANEL_QA_COMPLETE.md already states the size formula: 9,800 chunks of 384-dimensional float32 vectors are about 15 MB, not 384 MB. The saved exact index is data/index/faiss.index. The submitted 384 MB, 57 MB, 412 MB, and 421 MB values are not files in the repository. requirements.txt installs faiss-cpu, and the retrieval code contains no GPU or multi-thread comparison, which is the hardware point raised by Reviewer 2.",
     )
 
     heading(doc, "1.8  Retrieval agreement versus labelled recall", level=2)
