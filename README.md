@@ -81,7 +81,8 @@ hallucination-control-rag/
 ├── run_demo.sh                   # One-command demo + metric regeneration
 ├── demo/
 │   └── demo_run.py               # Sample queries and tri-state demonstration
-├── docs/                         # Module-by-module documentation and demo guide
+├── docs/                         # Project website (GitHub Pages / Vercel)
+├── guides/                       # Module-by-module documentation and demo guide
 ├── src/
 │   ├── ingestion/
 │   │   ├── document_loader.py    # PDF/DOCX/TXT loading
@@ -148,7 +149,7 @@ run_demo.bat
 
 Use Python 3.10 to 3.12 on Windows for the most reliable PyTorch and FAISS wheels.
 
-See [`docs/DEMO.md`](docs/DEMO.md) for what the demo prints and how to record the demo video.
+See [`guides/DEMO.md`](guides/DEMO.md) for what the demo prints and how to record the demo video.
 
 ### Step 1: Install Dependencies
 
@@ -277,7 +278,7 @@ python evaluation/calibrate_ragtruth_fusion.py
 
 This creates an 800-response calibration set and a disjoint held-out
 400-response test set from RAGTruth. Do not tune weights or thresholds on the
-test output. See `docs/12_ORGANIZATIONAL_CUSTOMIZATION.md` for adding
+test output. See `guides/12_ORGANIZATIONAL_CUSTOMIZATION.md` for adding
 organization documents and for the scope of customization claims.
 
 ---

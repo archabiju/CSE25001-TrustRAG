@@ -69,7 +69,7 @@ Recorded automatically in `demo/outputs/versions.txt`. Key settings from `config
 ## 4. Suggested video (3 to 5 minutes)
 
 1. (20 s) Title, problem statement: RAG answers can still contain unsupported sentences.
-2. (30 s) Show the repo structure and `docs/trustrag_architecture.png`.
+2. (30 s) Show the repo structure and `guides/trustrag_architecture.png`.
 3. (60 s) Run `./run_demo.sh`; show the version record and the index step.
 4. (90 s) Walk through the Part B output: the grounded answer is accepted, the mixed answer is partial with warnings, the fabricated answer is blocked.
 5. (45 s) Show the regenerated metrics table and compare it with `review3_corrected_nli_tables.md`.
