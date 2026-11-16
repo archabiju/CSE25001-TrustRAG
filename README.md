@@ -158,18 +158,17 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Install Ollama (for LLM generation)
+### Step 2: Download the models (one time)
 
 ```bash
-# Download from https://ollama.ai and install
-# Then pull a model:
-ollama pull mistral
-# Start the server:
-ollama serve
+python scripts/download_models.py
 ```
 
-> **Note:** The system works without Ollama too — it has a fallback mode
-> that uses extractive answers from retrieved chunks for testing.
+This caches TinyLlama-1.1B-Chat (the generator), all-MiniLM-L6-v2, the DeBERTa NLI
+cross-encoder, and DistilBERT. After that the system runs fully offline; no Ollama
+server is needed. On macOS behind a corporate HTTPS proxy the script trusts the
+system keychain's root certificates. To use Ollama instead, set
+`generation.backend: "ollama"` in `config/config.yaml`.
 
 ### Step 3: Add Documents to Corpus
 
@@ -184,11 +183,15 @@ data/corpus/
 streamlit run ui/app.py
 ```
 
-### Step 5: Build Index & Query
+### Step 5: Ask questions
 
-1. Click **🔨 Build Index** in the sidebar
-2. Type a question and click **🚀 Query**
-3. View color-coded results, explainability charts, and detection logs
+1. The saved index and the models load automatically (a few seconds on first start).
+2. Click an example question, or type your own in the chat box.
+3. Each sentence is colour-coded (green supported, amber weak, red hallucinated);
+   turn on **Show explainability details** for the per-claim log, charts, and word saliency.
+4. After adding documents to `data/corpus/`, click **🔨 Rebuild document index** in the sidebar.
+
+Chat history is saved to `data/chat_history.pkl` and restored on restart.
 
 ---
 

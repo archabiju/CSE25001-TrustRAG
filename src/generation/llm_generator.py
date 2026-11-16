@@ -1,22 +1,17 @@
 """
 LLM Generator — Generation Layer
 ====================================
-Interfaces with a locally running Ollama server to generate answers
-from retrieved context. No cloud API, no internet required.
+Default backend loads TinyLlama locally with Hugging Face Transformers.
+No Ollama server and no cloud API.
 
-Fallback mode: If Ollama is not running, returns a template message
-so the rest of the pipeline (explainability, detection) can still be tested.
+Optional backend "ollama" still calls a local Ollama server at
+http://localhost:11434/api/generate.
 
-Setup:
-    1. Install Ollama from https://ollama.ai (one-time download)
-    2. Pull a model:  ollama pull mistral
-    3. Start server:  ollama serve
-    4. This module then calls http://localhost:11434/api/generate
+If the chosen backend cannot generate, the module returns an extractive
+snippet from the top retrieved chunk so detection can still be tested.
 """
 
-import json
 import requests
-from typing import Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +26,18 @@ Rules:
 3. Do NOT fabricate information, statistics, or references not present in the context.
 4. Be concise and factual.
 5. Write complete sentences."""
+
+
+def _plain_excerpt(text: str, max_chars: int = 700) -> str:
+    """Collapse a retrieved chunk to one paragraph, clipped at a sentence end."""
+    passage = " ".join((text or "").split()).lstrip("# ").strip()
+    if len(passage) <= max_chars:
+        return passage
+    cut = passage[:max_chars]
+    dot = cut.rfind(". ")
+    if dot > 200:
+        return cut[: dot + 1]
+    return cut.rstrip() + "..."
 
 
 def build_prompt(query: str, context_chunks: list) -> str:
@@ -73,23 +80,44 @@ def build_prompt(query: str, context_chunks: list) -> str:
 # Generator class
 # ─────────────────────────────────────────────────────────────────────────────
 
+TINYLLAMA_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+TINYLLAMA_CHUNKS = 3
+TINYLLAMA_WORDS_PER_CHUNK = 280
+
+
 class LLMGenerator:
     """
-    Wraps the Ollama local LLM API to generate grounded answers.
+    Generates a grounded answer from retrieved chunks.
+
+    backend="tinyllama" loads TinyLlama in this process.
+    backend="ollama" calls a local Ollama server.
     """
 
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
-        model_name: str = "mistral",
+        model_name: str = TINYLLAMA_ID,
         temperature: float = 0.1,
-        max_tokens: int = 512,
+        max_tokens: int = 400,
+        backend: str = "tinyllama",
     ):
         self.base_url = base_url.rstrip("/")
-        self.model_name = model_name
+        self.model_name = model_name or TINYLLAMA_ID
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self._check_connection()
+        self.backend = (backend or "tinyllama").lower()
+        self._model = None
+        self._tokenizer = None
+        self._device = None
+        if self.backend == "ollama":
+            self._check_connection()
+        else:
+            self.backend = "tinyllama"
+            if "tinyllama" not in self.model_name.lower():
+                self.model_name = TINYLLAMA_ID
+            self._fallback_mode = False
+            print(f"[INFO] Generation backend: TinyLlama ({self.model_name}). "
+                  "The weights load on the first question.")
 
     def _check_connection(self) -> None:
         """Check if Ollama server is running."""
@@ -127,12 +155,15 @@ class LLMGenerator:
               - "answer": Generated text string.
               - "prompt": Full prompt sent to LLM.
               - "model": Model name used.
-              - "fallback": True if Ollama was not available.
+              - "fallback": True if the model could not generate.
         """
         prompt = build_prompt(query, context_chunks)
 
+        if self.backend == "tinyllama":
+            return self._generate_tinyllama(query, context_chunks, prompt)
+
         if getattr(self, "_fallback_mode", False):
-            return self._fallback_response(query, context_chunks, prompt)
+            return self._fallback_response(query, context_chunks, prompt, "Ollama not running")
 
         try:
             payload = {
@@ -164,33 +195,148 @@ class LLMGenerator:
 
         except requests.exceptions.Timeout:
             print("[WARN] Ollama request timed out. Using fallback.")
-            return self._fallback_response(query, context_chunks, prompt)
+            return self._fallback_response(query, context_chunks, prompt, "Ollama timed out")
         except Exception as e:
             print(f"[WARN] LLM generation error: {e}. Using fallback.")
-            return self._fallback_response(query, context_chunks, prompt)
+            return self._fallback_response(query, context_chunks, prompt, "Ollama request failed")
+
+    def warmup(self) -> bool:
+        """Load the local model ahead of the first question. Returns True if it is ready."""
+        if self.backend != "tinyllama":
+            return not getattr(self, "_fallback_mode", False)
+        if getattr(self, "_tinyllama_unavailable", False):
+            return False
+        try:
+            self._load_tinyllama()
+            return True
+        except Exception as e:
+            self._tinyllama_unavailable = True
+            print(f"[WARN] TinyLlama could not be loaded: {e}")
+            return False
+
+    @property
+    def status(self) -> str:
+        """Short status for the UI."""
+        if self.backend == "tinyllama":
+            if self._model is not None:
+                return f"TinyLlama ready on {self._device}"
+            if getattr(self, "_tinyllama_unavailable", False):
+                return "TinyLlama not available (using retrieved passage)"
+            return "TinyLlama not loaded yet"
+        if getattr(self, "_fallback_mode", False):
+            return "Ollama not reachable (using retrieved passage)"
+        return f"Ollama: {self.model_name}"
+
+    def _load_tinyllama(self) -> None:
+        """Download (once) and load TinyLlama onto MPS, CUDA, or CPU."""
+        if self._model is not None:
+            return
+
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        print(f"[INFO] Loading TinyLlama: {self.model_name}")
+        if torch.backends.mps.is_available():
+            device, dtype = "mps", torch.float16
+        elif torch.cuda.is_available():
+            device, dtype = "cuda", torch.float16
+        else:
+            device, dtype = "cpu", torch.float32
+
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_name, dtype=dtype, local_files_only=True
+        )
+        model.to(device)
+        model.eval()
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        self._tokenizer = tokenizer
+        self._model = model
+        self._device = device
+        print(f"[INFO] TinyLlama ready on {device}.")
+
+    def _generate_tinyllama(self, query: str, context_chunks: list, prompt: str) -> dict:
+        """Generate with the local TinyLlama chat model."""
+        if getattr(self, "_tinyllama_unavailable", False):
+            return self._fallback_response(
+                query, context_chunks, prompt, "TinyLlama is not available locally"
+            )
+        try:
+            import torch
+
+            self._load_tinyllama()
+            # TinyLlama reads at most 2048 tokens, prompt and answer together.
+            short_chunks = [
+                dict(c, text=" ".join(_plain_excerpt(c.get("text", ""), 10_000).split()[:TINYLLAMA_WORDS_PER_CHUNK]))
+                for c in context_chunks[:TINYLLAMA_CHUNKS]
+            ]
+            short_prompt = build_prompt(query, short_chunks)
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": short_prompt.split("=== CONTEXT ===", 1)[-1].strip()},
+            ]
+            inputs = self._tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+            ).to(self._device)
+            prompt_len = inputs["input_ids"].shape[-1]
+
+            do_sample = self.temperature > 0
+            gen_kwargs = {
+                "max_new_tokens": self.max_tokens,
+                "do_sample": do_sample,
+                "repetition_penalty": 1.15,
+                "pad_token_id": self._tokenizer.pad_token_id,
+                "eos_token_id": self._tokenizer.eos_token_id,
+            }
+            if do_sample:
+                gen_kwargs["temperature"] = self.temperature
+            with torch.no_grad():
+                output = self._model.generate(**inputs, **gen_kwargs)
+            answer = self._tokenizer.decode(
+                output[0][prompt_len:],
+                skip_special_tokens=True,
+            ).strip()
+            if not answer:
+                return self._fallback_response(
+                    query, context_chunks, prompt, "TinyLlama returned an empty answer"
+                )
+            return {
+                "answer": answer,
+                "prompt": prompt,
+                "model": self.model_name,
+                "fallback": False,
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            if self._model is None:
+                self._tinyllama_unavailable = True
+            print(f"[WARN] TinyLlama generation failed: {type(e).__name__}: {e}")
+            return self._fallback_response(query, context_chunks, prompt, f"TinyLlama failed: {e}")
 
     def _fallback_response(
         self,
         query: str,
         context_chunks: list,
         prompt: str,
+        reason: str = "generation unavailable",
     ) -> dict:
         """
-        Produce a simple extractive fallback when Ollama is unavailable.
-        Uses the top retrieved chunk's first two sentences as a proxy answer.
+        Use the top retrieved passage itself when the generator cannot run.
+
+        The error text is logged, not inserted into the answer. Markdown
+        heading marks are removed so the passage stays normal sentence text.
         """
+        print(f"[WARN] Using retrieved passage because generation failed: {reason}")
         if context_chunks:
-            top_chunk = context_chunks[0]["text"]
-            # Take the first 200 chars as a basic answer
-            answer = top_chunk[:300].strip() + "..."
-            answer = (
-                f"[FALLBACK — Ollama not running] Based on retrieved context:\n{answer}"
-            )
+            answer = _plain_excerpt(context_chunks[0].get("text", ""))
         else:
-            answer = (
-                "[FALLBACK] No relevant documents found for this query. "
-                "Please ensure documents are indexed and Ollama is running."
-            )
+            answer = "No relevant documents found for this query."
 
         return {
             "answer": answer,
@@ -201,7 +347,7 @@ class LLMGenerator:
 
 
 if __name__ == "__main__":
-    gen = LLMGenerator(model_name="mistral")
+    gen = LLMGenerator()
     fake_chunks = [
         {
             "text": "RAG combines retrieval with generation to produce grounded answers.",

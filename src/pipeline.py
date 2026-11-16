@@ -5,7 +5,7 @@ The main entry point that wires together all components:
 
     1. Ingestion  (load + chunk documents)
     2. Retrieval  (embed + FAISS index/search)
-    3. Generation (local LLM via Ollama)
+    3. Generation (local TinyLlama, or Ollama if configured)
     4. XAI Layer  (cosine scores, attribution, provenance)
     5. Detection  (NLI + BERTScore + cosine aggregation)
     6. Controller (tri-state decision)
@@ -16,6 +16,12 @@ Usage:
 """
 
 import os
+# Models are already cached. Skip Hugging Face network checks so a failed
+# SSL handshake cannot add a retry delay to every load and every question.
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
 import sys
 import yaml
 import numpy as np
@@ -115,10 +121,12 @@ class RAGHallucinationPipeline:
         self.top_k       = ret.get("top_k", 5)
         self.emb_dim     = ret.get("embedding_dim", 384)
         self.emb_model   = ret.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2")
+        self.min_sim     = ret.get("min_similarity", 0.0)
+        self.llm_backend = gen.get("backend", "tinyllama")
         self.llm_url     = gen.get("ollama_base_url", "http://localhost:11434")
-        self.llm_model   = gen.get("model_name", "mistral")
+        self.llm_model   = gen.get("model_name", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
         self.llm_temp    = gen.get("temperature", 0.1)
-        self.llm_tokens  = gen.get("max_tokens", 512)
+        self.llm_tokens  = gen.get("max_tokens", 400)
         self.nli_model   = nli.get("model", "cross-encoder/nli-deberta-v3-small")
         self.bs_lang     = bs.get("lang", "en")
         self.bs_model    = bs.get("model_type", "distilbert-base-uncased")
@@ -146,8 +154,10 @@ class RAGHallucinationPipeline:
 
         self.embedder   = Embedder(self.emb_model)
         self.faiss_store = FAISSStore(self.index_dir, self.emb_dim)
-        self.generator  = LLMGenerator(self.llm_url, self.llm_model,
-                                        self.llm_temp, self.llm_tokens)
+        self.generator  = LLMGenerator(
+            self.llm_url, self.llm_model, self.llm_temp, self.llm_tokens,
+            backend=self.llm_backend,
+        )
         self.nli_detector   = NLIDetector(self.nli_model)
         self.bert_detector  = BERTScoreDetector(self.bs_lang, self.bs_model)
         self.hall_engine    = HallucinationEngine(
@@ -230,6 +240,7 @@ class RAGHallucinationPipeline:
         self,
         user_query: str,
         top_k: Optional[int] = None,
+        progress=None,
     ) -> PipelineResult:
         """
         Run the full pipeline for a user query.
@@ -245,10 +256,15 @@ class RAGHallucinationPipeline:
         Args:
             user_query: The user's question string.
             top_k: Override the configured top_k retrieval count.
+            progress: Optional callable that receives a short label for each step.
 
         Returns:
             PipelineResult with full structured output.
         """
+        def step(label: str) -> None:
+            if progress is not None:
+                progress(label)
+
         self._load_models()
 
         if not self.faiss_store.is_loaded():
@@ -265,6 +281,7 @@ class RAGHallucinationPipeline:
             # ── Step 1: Retrieve ──────────────────────────────────────────
             print(f"\n[PIPELINE] Query: {user_query[:80]}")
             print("[PIPELINE] Step 1: Embedding query and retrieving chunks...")
+            step("Retrieving relevant passages")
 
             query_vec = self.embedder.embed_query(user_query)
             retrieved = self.faiss_store.search(query_vec, k=top_k)
@@ -275,8 +292,26 @@ class RAGHallucinationPipeline:
                 print(f"  • [{r['rank']}] {r['source_file']} p.{r['page_num']} "
                       f"(sim={r['similarity_score']:.3f})")
 
+            top_sim = retrieved[0]["similarity_score"] if retrieved else 0.0
+            if top_sim < self.min_sim:
+                print(f"[PIPELINE] Top similarity {top_sim:.3f} < {self.min_sim}: out of scope, blocked.")
+                step("No relevant passage found in the documents")
+                result.summary = {
+                    "overall_support_score": 0.0, "hallucination_ratio": 0.0,
+                    "num_hallucinated": 0, "total_sentences": 0, "out_of_scope": True,
+                }
+                result.response = self.controller.decide(
+                    [], result.summary, "", retrieved_chunks=retrieved,
+                )
+                result.response.warning_message = (
+                    f"Out of scope: the closest passage has similarity {top_sim:.2f}, "
+                    f"below the {self.min_sim:.2f} relevance cut-off."
+                )
+                return result
+
             # ── Step 2: Generate ──────────────────────────────────────────
             print("[PIPELINE] Step 2: Generating answer via local LLM...")
+            step("Generating the answer with TinyLlama")
             gen_result   = self.generator.generate(user_query, retrieved)
             raw_answer   = gen_result["answer"]
             result.raw_answer = raw_answer
@@ -294,6 +329,7 @@ class RAGHallucinationPipeline:
 
             # ── Step 4: XAI Layer ─────────────────────────────────────────
             print("[PIPELINE] Step 4: Computing XAI explainability signals...")
+            step("Attributing each sentence to its evidence")
             chunk_texts = [c["text"] for c in retrieved]
             chunk_vecs  = self.embedder.embed(chunk_texts)
 
@@ -312,6 +348,7 @@ class RAGHallucinationPipeline:
 
             # ── Step 5: Hallucination Detection ───────────────────────────
             print("[PIPELINE] Step 5: Running hallucination detection...")
+            step("Checking claims with NLI and BERTScore")
             attributions = xai_report["attributions"]
 
             evidence = (EvidenceWindows(retrieved, self.embedder, self.win_size)
@@ -335,6 +372,7 @@ class RAGHallucinationPipeline:
 
             # ── Step 6: Decision Controller ───────────────────────────────
             print("[PIPELINE] Step 6: Applying tri-state decision controller...")
+            step("Deciding: cite, warn, or block")
             prov_score = xai_report.get("provenance", {}).get("provenance_score", 0.0)
             response = self.controller.decide(
                 verdicts,
@@ -342,6 +380,7 @@ class RAGHallucinationPipeline:
                 raw_answer,
                 retrieved_chunks=retrieved,
                 provenance_score=prov_score,
+                generation_fallback=bool(gen_result.get("fallback")),
             )
             result.response = response
 

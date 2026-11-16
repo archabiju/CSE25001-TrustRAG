@@ -58,11 +58,21 @@ def load_docx(file_path: str) -> List[Dict[str, Any]]:
 
 
 def load_text(file_path: str) -> List[Dict[str, Any]]:
-    """Load a plain text or markdown file."""
+    """Load a plain text or markdown file.
+
+    Markdown heading lines are dropped. The chunker joins words onto one line, so a
+    heading such as '# BERTScore and Semantic Similarity Metrics' would otherwise be
+    glued to the first body sentence and verified as part of a claim.
+    """
     pages = []
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            text = f.read().strip()
+            text = f.read()
+        if file_path.lower().endswith(".md"):
+            text = "\n".join(
+                line for line in text.splitlines() if not line.lstrip().startswith("#")
+            )
+        text = text.strip()
         if text:
             pages.append({
                 "text": text,

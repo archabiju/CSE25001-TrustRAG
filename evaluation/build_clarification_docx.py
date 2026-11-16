@@ -173,13 +173,13 @@ def build():
 
     add_p(
         doc,
-        "This note answers every reviewer comment on the accepted paper “TrustRAG-Opt: Efficient Retrieval Optimization for Explainable Offline Retrieval-Augmented Generation.” Section 1 states what the GitHub repository itself contains. The tables in Section 6 come from a repeated run of that code on 13 October 2026. Variance was computed on that run. It was not attached to the submitted point estimates, because that run does not recover the 9,800-chunk, 400-query experiment described in the submission.",
+        "This note answers every reviewer comment on the accepted paper “TrustRAG-Opt: Efficient Retrieval Optimization for Explainable Offline Retrieval-Augmented Generation.” Section 1 states what the submitted repository contains. The tables in Section 6 come from a repeated run of that code on 13 October 2026. Variance was computed on that run. It was not attached to the submitted point estimates, because that run does not recover the 9,800-chunk, 400-query experiment described in the submission. Section 9 records the detector correction and the external benchmark completed for the final review.",
     )
 
     heading(doc, "1. Answers from the GitHub repository")
     add_p(
         doc,
-        "These answers are what https://github.com/archabiju/hallucination-control-rag shows on branch master, commit a7dd4d1. It is the only repository on the author’s GitHub account for this project. The five-run latency tables later in this note were produced locally from that same code. They are not yet committed to the repository.",
+        "Two records are kept separate. The submitted code is https://github.com/archabiju/hallucination-control-rag, branch master, commit a7dd4d1. It is the only repository on the author’s GitHub account for this project. The five-run latency logs, the corrected NLI detector, and the RAGTruth evaluation are on branch cursor/reviewer-clarification-variability. Statements in Section 1 describe master unless they say otherwise.",
     )
 
     heading(doc, "1.1  Base system and what this paper adds", level=2)
@@ -200,7 +200,7 @@ def build():
     add_p(doc, "Reviewer 1 asked for standard deviations or confidence intervals on Tables 2 and 3, especially for 95th-percentile latency.", italic=True)
     add_p(
         doc,
-        "The repository contains one saved detection run, evaluation/results/review2_report.json, dated 5 October 2026. That file has no standard deviation and no confidence interval. It does not contain a repeated latency log for Tables 2 and 3.",
+        "On master, the repository contains one saved detection run, evaluation/results/review2_report.json, dated 5 October 2026. That file has no standard deviation and no confidence interval, and it does not contain a repeated latency log for Tables 2 and 3. The clarification branch adds the five-run logs under evaluation/results/trustrag_opt_variability_20261013/. Those logs are the source of the variance in Section 6. They do not replace the saved Review 2 file.",
     )
 
     heading(doc, "1.4  Conventional RAG baseline", level=2)
@@ -214,7 +214,7 @@ def build():
     add_p(doc, "Reviewer 1 asked for a quantitative score or Pareto analysis instead of qualitative deployment advice.", italic=True)
     add_p(
         doc,
-        "The manuscripts discuss the latency, recall, and memory trade-off in prose. The repository has no Pareto script and no result file for that analysis. The non-dominated set reported later in this note comes from the local five-run measurement, not from a file already on GitHub.",
+        "The manuscripts discuss the latency, recall, and memory trade-off in prose. Master has no Pareto result file. The clarification branch computes the non-dominated set from the five-run measurement, and that set is reported in Section 3.5.",
     )
 
     heading(doc, "1.6  End-to-end latency and the title", level=2)
@@ -502,26 +502,64 @@ def build():
     heading(doc, "9. Final-review detector audit")
     add_p(
         doc,
-        "The NLI label-order correction resolves the reviewer’s concern that NLI AUROC was below BERTScore despite NLI receiving the largest fusion weight. A weight cannot raise a component’s own AUROC; the old NLI curve was wrong because the detector used the neutral class as entailment. On the corrected 109-claim run, NLI-only AUROC is 0.935 versus BERTScore AUROC 0.797. With DeBERTa-v3-base and eight evidence windows, NLI-only AUROC is 0.948, fusion F1 is 0.871, and fusion accuracy is 0.899.",
+        "The NLI label-order correction resolves the concern that NLI AUROC was below BERTScore even though NLI receives the largest fusion weight. A weight cannot raise a component’s own AUROC. The old curve was wrong because the detector used checkpoint class 2, which is neutral, as entailment. The checkpoint defines contradiction = 0, entailment = 1, and neutral = 2. The detector now reads id2label from the checkpoint. The saved 5 October Review 2 file is left unchanged and is not cited as a current result.",
     )
+
+    heading(doc, "9.1  Corrected project benchmark", level=2)
+    add_p(doc, "Data: the same 37 author-written questions, 109 claims (70 supported, 39 hallucinated), and 213 indexed chunks. Positive class is the hallucinated claim. The threshold is the fixed support threshold of 0.50, and the fusion weights remain 0.45 / 0.35 / 0.20.")
+    add_p(doc, "NLI-small, four evidence windows (evaluation/results/review3_corrected_nli_report.json):", space_after=4)
+    add_table(
+        doc,
+        ["Configuration", "Precision", "Recall", "F1", "Accuracy", "AUROC"],
+        [
+            ["NLI only", "0.805", "0.846", "0.825", "0.872", "0.935"],
+            ["BERTScore only", "0.000", "0.000", "0.000", "0.642", "0.797"],
+            ["Cosine only", "0.379", "0.564", "0.454", "0.514", "0.573"],
+            ["NLI + BERTScore", "0.790", "0.769", "0.779", "0.844", "0.913"],
+            ["Three-signal fusion", "0.795", "0.795", "0.795", "0.853", "0.897"],
+        ],
+    )
+    add_p(doc, "Eight evidence windows with the same small NLI model raise the three-signal result to precision 0.816, recall 0.795, F1 0.805, accuracy 0.862, and AUROC 0.900. NLI-only AUROC is 0.936.")
+    add_p(doc, "cross-encoder/nli-deberta-v3-base with eight evidence windows is the strongest result on these same 109 claims: NLI-only precision 0.804, recall 0.949, F1 0.871, accuracy 0.899, AUROC 0.948. The three-signal fusion matches that F1 and accuracy, with AUROC 0.908. A threshold chosen on these same claims can reach accuracy 0.908, while precision stays near 0.81. That threshold search is a development result. It is not an unbiased final estimate, and it is not more than 90% precision.")
+
+    heading(doc, "9.2  Held-out RAGTruth benchmark", level=2)
+    add_p(doc, "evaluation/build_ragtruth_benchmark.py converts official RAGTruth hallucination spans into sentence labels. A sentence is labelled hallucinated when a character span overlaps an official annotation. The split is 800 calibration responses (5,911 claims, 605 hallucinated) and a disjoint 400-response test (3,031 claims, 232 hallucinated), balanced across QA, summarization, and data-to-text, with no shared response or source. Calibration may use only the 800 responses.")
+    add_p(doc, "The calibration constraint is w_NLI ≥ w_BERTScore ≥ w_cosine ≥ 0, weights summing to 1, step 0.05. It selects NLI 0.60, BERTScore 0.40, cosine 0.00, and support threshold 0.32. No train threshold reached precision of at least 0.90 with at least 10 flags. On the untouched test set:")
+    add_table(
+        doc,
+        ["Metric", "Estimate", "95% CI"],
+        [
+            ["Precision", "0.155", "0.128–0.183"],
+            ["Recall", "0.599", "0.527–0.670"],
+            ["F1", "0.246", "0.208–0.284"],
+            ["Accuracy", "0.719", "0.693–0.743"],
+            ["Balanced accuracy", "0.664", "0.628–0.699"],
+            ["AUROC", "0.705", "0.667–0.741"],
+        ],
+    )
+    add_p(doc, "The interval is a response-level bootstrap with 2,000 resamples. Zero-shot NLI AUROC on the full calibration split is 0.670. Scoring the first 100 calibration responses with nli-deberta-v3-base gives AUROC 0.659, so the larger checkpoint does not repair generalization. Widening the evidence window on that 100-response slice also does not raise NLI AUROC above the small-model result. A learned fusion fit on the calibration scores overfits: a random forest reaches train F1 0.692 and test F1 0.236. The current zero-shot system therefore does not support a claim of more than 90% precision or F1 on this external benchmark.")
+    add_p(doc, "Raw BERTScore accuracy at threshold 0.5 is 0.924 because 92.3% of test sentences are supported and the score flags none of the hallucinated sentences. Its hallucination precision, recall, and F1 are zero. A “more than 90% correct” statement based only on accuracy would describe the majority class.")
+
+    heading(doc, "9.3  Organizational customization", level=2)
+    add_p(doc, "The system is customized by rebuilding the local index from an organization’s approved PDF, DOCX, TXT, and Markdown files in data/corpus, then running the existing indexing step. Queries are answered from the chunks retrieved from that index, and the verifier checks each claim against those chunks. The MS MARCO subset, the project corpus, and the 37-question benchmark are the demonstration used for this review. They are not the knowledge base an organization would deploy.")
+    add_p(doc, "data/corpus/msmarco_subset.txt contains 1,000 passages, not 2,000. A 2,000-passage subset can be built only when the original MS MARCO collection.tsv is available. Those passages are retrieval distractors. They are not a sentence-level hallucination benchmark, and the repository does not contain MS MARCO qrels, so official retrieval metrics on MS MARCO are not reported.")
+    add_p(doc, "Adding documents does not guarantee a correct answer. Retrieval can miss evidence, a source document can be wrong or outdated, and the verifier has false positives and false negatives. Whenever the corpus changes, the organization-specific questions must be labelled again and the evaluation repeated. The final test split is not used to choose weights, thresholds, window size, or retrieval parameters.")
     add_p(
         doc,
-        "The project now also includes an external RAGTruth benchmark: 800 calibration responses (5,911 claims) and a disjoint held-out set of 400 responses (3,031 claims), balanced across QA, summarization, and data-to-text. NLI-major calibration selects weights 0.60/0.40/0.00 and a support threshold of 0.32. On held-out RAGTruth, precision is 0.155, recall 0.599, F1 0.246, balanced accuracy 0.664, and AUROC 0.705. Therefore the current zero-shot system does not support a claim of more than 90% precision or general accuracy. Raw BERTScore accuracy of 0.924 is a majority-class artifact: it identifies none of the hallucinated sentences at threshold 0.5.",
-    )
-    add_p(
-        doc,
-        "The camera-ready should use the corrected local result as a clearly labelled development result and the RAGTruth result as the external generalization result. It should not claim superiority over cited papers unless all methods are compared on the same held-out split. The defensible novelty is the architecture—offline evidence attribution, multi-signal verification, and tri-state control—not an unsupported state-of-the-art score.",
+        "The camera-ready should use the corrected 109-claim result as a clearly labelled development result and the RAGTruth result as the external generalization result. It should not claim superiority over cited papers unless all methods are compared on the same held-out split. The defensible novelty is the architecture—offline evidence attribution, multi-signal verification, tri-state control, and a local index that an organization can rebuild from its own documents—not an unsupported state-of-the-art score.",
     )
 
     heading(doc, "10. Short reply the authors can send with the revision")
     add_p(
         doc,
-        "We thank the reviewers. The camera-ready cites the base system as our prior offline TrustRAG pipeline and states that this paper’s contribution is the controlled index comparison. Equation 7 is renamed Retrieval Agreement@K and is reported separately from labelled-source recall. Tables 2 and 3 are replaced by five-run measurements on the saved 213-chunk index and the saved 37 questions, with standard deviations and 95% confidence intervals. The 95th percentile is summarized across runs. Index footprint is the serialized file size; process memory is reported separately and is dominated by the runtime. We corrected an NLI label-order defect: the corrected 109-claim NLI AUROC is 0.935, rather than the invalid 0.571 result. We additionally report an independently annotated 400-response RAGTruth test, on which the zero-shot detector does not achieve 90% precision. The non-dominated retrieval set is FlatIP and HNSW with efSearch = 16. Hybrid retrieval is reported as a labelled-source recall gain, not as higher agreement with exact search. The conventional-RAG hallucination comparison and submitted 0.898 ablation are removed because they are not supported by the logged runs. We state explicitly that the project queries were author-written, that no second annotator was used, and that the index hyperparameters were fixed in advance. We also state that NLI dominates end-to-end time and that the small-collection retrieval ordering is not claimed to generalize to larger corpora or GPU and multi-thread deployment.",
+        "We thank the reviewers. The camera-ready cites the base system as our prior offline TrustRAG pipeline and states that this paper’s contribution is the controlled index comparison. Equation 7 is renamed Retrieval Agreement@K and is reported separately from labelled-source recall. Tables 2 and 3 are replaced by five-run measurements on the saved 213-chunk index and the saved 37 questions, with standard deviations and 95% confidence intervals. The 95th percentile is summarized across runs. Index footprint is the serialized file size; process memory is reported separately and is dominated by the runtime. We corrected an NLI label-order defect: the corrected 109-claim NLI AUROC is 0.935, rather than the invalid 0.571 result, and it is now above BERTScore. We additionally report an independently annotated 400-response RAGTruth test, on which the zero-shot detector does not achieve 90% precision (held-out precision 0.155, F1 0.246, AUROC 0.705). The MS MARCO file used here contains 1,000 passages and is a demonstration corpus. An organization customizes the system by adding its own documents and rebuilding the local index; that does not by itself guarantee correctness. The non-dominated retrieval set is FlatIP and HNSW with efSearch = 16. Hybrid retrieval is reported as a labelled-source recall gain, not as higher agreement with exact search. The conventional-RAG hallucination comparison and submitted 0.898 ablation are removed because they are not supported by the logged runs. We state explicitly that the project queries were author-written, that no second annotator was used, and that the index hyperparameters were fixed in advance. We also state that NLI dominates end-to-end time and that the small-collection retrieval ordering is not claimed to generalize to larger corpora or GPU and multi-thread deployment. We do not claim a higher score than the cited papers, because those papers were not rerun on this split.",
     )
 
     add_p(doc, "Logs", bold=True, space_before=8, space_after=4)
     add_p(doc, "Repeated retrieval and NLI run: evaluation/results/trustrag_opt_variability_20261013/ (summary.md, summary.json, run_01 through run_05, per-query JSONL, and latency samples).")
     add_p(doc, "Saved detection run, not overwritten: evaluation/results/review2_report.json.")
+    add_p(doc, "Corrected detector runs: evaluation/results/review3_corrected_nli_report.json, review3_windows8_report.json, and review3_nli_base_windows8_report.json.")
+    add_p(doc, "RAGTruth split and held-out calibration: evaluation/benchmarks/ragtruth/ and evaluation/results/ragtruth/calibrated_fusion_report.json.")
 
     doc.save(OUT)
     print(OUT)

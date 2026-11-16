@@ -1,0 +1,81 @@
+Index: {'status': 'reused', 'num_chunks': 213, 'corpus_dir': 'data/corpus'}
+
+========================================================================
+PART A - LIVE QUERY (full pipeline)
+========================================================================
+
+Question: What is hallucination in large language models and how does RAG help reduce it?
+⚠️  Partial Answer (Mixed Confidence)
+
+Hallucination refers to the phenomenon where a language model generates false or misleading information that appears to be accurate or genuine. [hallucination_in_llms.md, p.1] In large language models (RLMs), hallucination occurs when the model generates incorrect or incomplete information that may lead to misinformation or confusion. [hallucination_in_llms.md, p.1] ⛔ [LOW CONFIDENCE — suppressed claim, score 0.38] ⛔ [LOW CONFIDENCE — suppressed claim, score 0.39] By identifying and filtering out hallucinatory samples, RAG helps ensure the reliability and trustworthiness of generated responses. [Enhancing RAG Pipelines with Agent-Based Hallucination Detection and Guardrails Mechanisms.pdf, p.2] Hallucination detection methods like context injection and prompt engineering can also be used to improve RAG's ability to detect and filter out hallucinatory samples. [Enhancing RAG Pipelines with Agent-Based Hallucination Detection and Guardrails Mechanisms.pdf, p.2] ⛔ [LOW CONFIDENCE — suppressed claim, score 0.35]
+
+ℹ️  Note: 3 claim(s) had insufficient document support and were flagged. Overall grounding score: 65.26%.
+
+📊 Overall Grounding Score: 65.26%
+🧬 Global Provenance Score: 100.00%
+
+Per-sentence verdicts:
+   [SUPPORTED       ] support=0.89 (NLI 1.00 | BERT 0.81 | cos 0.77)
+      "Hallucination refers to the phenomenon where a language model generates false or misleading information that a"
+   [SUPPORTED       ] support=0.86 (NLI 0.97 | BERT 0.81 | cos 0.71)
+      "In large language models (RLMs), hallucination occurs when the model generates incorrect or incomplete informa"
+   [HALLUCINATED    ] support=0.38 (NLI 0.00 | BERT 0.81 | cos 0.49)
+      "RAG (Reasoning About Genres) is a technique used by LLMs to reduce hallucination."
+   [HALLUCINATED    ] support=0.39 (NLI 0.02 | BERT 0.80 | cos 0.52)
+      "RAG helps LLMs identify and filter out hallucinatory samples during generation, thereby reducing the likelihoo"
+   [SUPPORTED       ] support=0.82 (NLI 0.98 | BERT 0.80 | cos 0.52)
+      "By identifying and filtering out hallucinatory samples, RAG helps ensure the reliability and trustworthiness o"
+   [SUPPORTED       ] support=0.87 (NLI 0.99 | BERT 0.85 | cos 0.67)
+      "Hallucination detection methods like context injection and prompt engineering can also be used to improve RAG'"
+   [HALLUCINATED    ] support=0.35 (NLI 0.01 | BERT 0.80 | cos 0.34)
+      "Overall, RAG plays a crucial role in enhancing the reliability and trustworthiness of LLMs in real-world appli"
+
+========================================================================
+PART B - TRI-STATE DEMONSTRATION (answers built from labelled claims)
+========================================================================
+
+Q: What is Retrieval-Augmented Generation?
+1. Grounded answer  ->  ANSWER_WITH_CITATIONS  (grounding 89%)
+   [SUPPORTED       ] support=0.88 (NLI 1.00 | BERT 0.85 | cos 0.69)
+      "RAG combines a retriever that searches an external knowledge source with a generator that produces text."
+   [SUPPORTED       ] support=0.90 (NLI 0.98 | BERT 0.90 | cos 0.72)
+      "A RAG system looks up relevant passages at query time and gives them to the language model as context."
+
+Q: What is Retrieval-Augmented Generation?
+2. Grounded + fabricated  ->  PARTIAL_ANSWER  (grounding 65%)
+   [SUPPORTED       ] support=0.88 (NLI 1.00 | BERT 0.85 | cos 0.69)
+      "RAG combines a retriever that searches an external knowledge source with a generator that produces text."
+   [SUPPORTED       ] support=0.90 (NLI 0.98 | BERT 0.90 | cos 0.72)
+      "A RAG system looks up relevant passages at query time and gives them to the language model as context."
+   [HALLUCINATED    ] support=0.39 (NLI 0.00 | BERT 0.80 | cos 0.54)
+      "RAG completely eliminates hallucination in language models."
+   [HALLUCINATED    ] support=0.41 (NLI 0.00 | BERT 0.82 | cos 0.61)
+      "RAG requires retraining the language model every time the knowledge base is updated."
+
+Q: What is Retrieval-Augmented Generation?
+3. Fabricated answer  ->  BLOCKED  (grounding 40%)
+   [HALLUCINATED    ] support=0.39 (NLI 0.00 | BERT 0.80 | cos 0.54)
+      "RAG completely eliminates hallucination in language models."
+   [HALLUCINATED    ] support=0.41 (NLI 0.00 | BERT 0.82 | cos 0.61)
+      "RAG requires retraining the language model every time the knowledge base is updated."
+
+Q: Why is RAG not a guarantee against hallucination?
+1. Grounded answer  ->  PARTIAL_ANSWER  (grounding 62%)
+   [SUPPORTED       ] support=0.84 (NLI 1.00 | BERT 0.84 | cos 0.50)
+      "A language model can ignore or misread the retrieved context and still produce unsupported claims."
+   [HALLUCINATED    ] support=0.40 (NLI 0.00 | BERT 0.79 | cos 0.64)
+      "Hallucination-detection layers check after generation whether each sentence is backed by the retrieved evidenc"
+
+Q: Why is RAG not a guarantee against hallucination?
+2. Grounded + fabricated  ->  BLOCKED  (grounding 53%)
+   [SUPPORTED       ] support=0.84 (NLI 1.00 | BERT 0.84 | cos 0.50)
+      "A language model can ignore or misread the retrieved context and still produce unsupported claims."
+   [HALLUCINATED    ] support=0.40 (NLI 0.00 | BERT 0.79 | cos 0.64)
+      "Hallucination-detection layers check after generation whether each sentence is backed by the retrieved evidenc"
+   [HALLUCINATED    ] support=0.36 (NLI 0.00 | BERT 0.82 | cos 0.35)
+      "A model that receives retrieved context can never generate a claim unsupported by any chunk."
+
+Q: Why is RAG not a guarantee against hallucination?
+3. Fabricated answer  ->  BLOCKED  (grounding 36%)
+   [HALLUCINATED    ] support=0.36 (NLI 0.00 | BERT 0.82 | cos 0.35)
+      "A model that receives retrieved context can never generate a claim unsupported by any chunk."

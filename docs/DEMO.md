@@ -4,6 +4,16 @@ A run-based demo: one command regenerates the version record, sample outputs and
 
 ## 1. Run it
 
+First time only, download the models (about 2.3 GB; afterwards everything runs offline):
+
+```bash
+source .venv/bin/activate
+python scripts/download_models.py
+```
+
+On macOS behind a corporate HTTPS proxy, this script handles the `CERTIFICATE_VERIFY_FAILED`
+error by trusting the system keychain's root certificates.
+
 macOS / Linux:
 
 ```bash
@@ -18,7 +28,7 @@ Windows (PowerShell or CMD):
 run_demo.bat
 ```
 
-Runs in about 3 to 5 minutes. Ollama is not required: without it, the generator returns the retrieved passage (clearly labelled fallback), and retrieval, XAI, detection and the tri-state controller still run for real.
+Runs in about one minute on an Apple M-series Mac. Answers are generated locally by TinyLlama-1.1B-Chat with greedy decoding, so a question gives the same answer every run. No Ollama server is needed. If TinyLlama is not downloaded, the generator returns the retrieved passage, and the dashboard marks it "Retrieved passage, not generated".
 
 | Step | Command run by the script | Output |
 |---|---|---|
@@ -47,8 +57,10 @@ Recorded automatically in `demo/outputs/versions.txt`. Key settings from `config
 
 | Item | Value |
 |---|---|
+| Generator | TinyLlama/TinyLlama-1.1B-Chat-v1.0, greedy, 256 new tokens, top 3 passages |
 | Embedding model | sentence-transformers/all-MiniLM-L6-v2 (384-d) |
 | Vector index | FAISS IndexFlatIP, top_k 8 |
+| Out-of-scope gate | blocked before generation when the top passage's cosine is below 0.20 |
 | NLI model | cross-encoder/nli-deberta-v3-small (labels read from `id2label`) |
 | BERTScore model | distilbert-base-uncased |
 | Fusion weights | NLI 0.45, BERTScore 0.35, cosine 0.20 |
@@ -61,11 +73,16 @@ Recorded automatically in `demo/outputs/versions.txt`. Key settings from `config
 3. (60 s) Run `./run_demo.sh`; show the version record and the index step.
 4. (90 s) Walk through the Part B output: the grounded answer is accepted, the mixed answer is partial with warnings, the fabricated answer is blocked.
 5. (45 s) Show the regenerated metrics table and compare it with `review3_corrected_nli_tables.md`.
-6. (30 s) Show `streamlit run ui/app.py`: ask one question and show the evidence attribution and detection log.
+6. (60 s) Show `streamlit run ui/app.py` and click the four example buttons:
+   - "What is BERTScore?": cited answer (grounding about 91%).
+   - "What is Retrieval-Augmented Generation?": partial answer with flagged sentences.
+   - "What is FAISS?": blocked. TinyLlama adds claims that are not in the documents, and the detector catches them.
+   - "Who won the 2022 FIFA World Cup?": blocked immediately as out of scope.
+   Open "Show explainability details" on one answer to show the per-claim log, charts, and word saliency.
 7. (15 s) Close with the limitations: small development benchmark, plus the external RAGTruth result.
 
 ## 5. Known limitations
 
 - The 109-claim benchmark is a development set; the held-out RAGTruth evaluation is the external result.
-- Without Ollama the answer text is the retrieved passage, not LLM-written.
+- TinyLlama is a 1.1B model and often adds facts that are not in the documents. The detector flags them; that is the behaviour being demonstrated, not a defect in the detector.
 - The paper's 9,800-chunk figures are not reproduced by this repository; the saved results in `evaluation/results/` are the measured values.

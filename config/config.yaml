@@ -19,13 +19,16 @@ retrieval:
   top_k: 8               # Top-K chunks retrieved per query (raised from 5 so there is
                          # more real material to draw a longer grounded answer from)
   embedding_dim: 384    # Output dim of all-MiniLM-L6-v2
+  min_similarity: 0.20  # Below this top-1 cosine the question is out of scope and is blocked
+                        # before generation. On the 37 test questions the lowest top-1 is 0.229.
 
-# ── Generation (Local Ollama LLM) ────────────────────────────────────────────
+# ── Generation (local TinyLlama via Hugging Face; no Ollama server) ─────────
 generation:
+  backend: "tinyllama"   # "tinyllama" loads the model in-process; "ollama" uses localhost:11434
   ollama_base_url: "http://localhost:11434"
-  model_name: "mistral"   # or "llama3", "phi3" — whatever you have pulled
-  temperature: 0.1
-  max_tokens: 1200        # raised from 512 so longer, well-explained answers aren't cut off
+  model_name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  temperature: 0.0        # greedy decoding: the same question always gives the same answer
+  max_tokens: 256         # new tokens per answer; TinyLlama shares a 2048-token window with the prompt
   system_prompt: >
     You are a precise, factual assistant. Answer ONLY using the provided context.
     Give a thorough, well-explained answer: elaborate on the relevant points,

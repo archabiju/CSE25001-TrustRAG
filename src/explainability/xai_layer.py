@@ -239,36 +239,35 @@ def compute_word_saliency(
         return [{"word": w, "saliency": 0.0, "in_source": False} for w in words]
 
     try:
-        # Embed the source chunk once
-        chunk_vec = embedder.embed([source_chunk])[0]        # shape (D,)
+        # One batched encode: chunk, full sentence, then each leave-one-out sentence.
+        reduced_rows = []
+        texts = [source_chunk, sentence]
+        for i, word in enumerate(words):
+            reduced = " ".join(words[:i] + words[i + 1:])
+            if reduced.strip():
+                reduced_rows.append(i)
+                texts.append(reduced)
 
-        # Embed the full sentence → baseline similarity
-        full_vec = embedder.embed([sentence])[0]             # shape (D,)
-        baseline_sim = float(np.dot(full_vec, chunk_vec))    # cosine (L2-normed)
+        vectors = embedder.embed(texts)
+        chunk_vec = vectors[0]
+        full_vec = vectors[1]
+        baseline_sim = float(np.dot(full_vec, chunk_vec))
+        reduced_by_index = {
+            word_index: vectors[2 + row]
+            for row, word_index in enumerate(reduced_rows)
+        }
 
         source_words_lower = set(source_chunk.lower().split())
         result = []
 
         for i, word in enumerate(words):
-            # Build sentence with word w_k removed
-            reduced = " ".join(words[:i] + words[i + 1:])
-            if not reduced.strip():
-                # Single-word sentence: saliency = baseline
-                result.append({
-                    "word": word,
-                    "saliency": round(baseline_sim, 4),
-                    "in_source": word.lower().strip(".,!?;:\"'()") in source_words_lower,
-                })
-                continue
-
-            reduced_vec = embedder.embed([reduced])[0]
-            reduced_sim = float(np.dot(reduced_vec, chunk_vec))
-
-            # σ(w_k) = sim(full) − sim(reduced)   [Eq. 4]
-            saliency = baseline_sim - reduced_sim
-
             clean = word.lower().strip(".,!?;:\"'()")
             in_source = clean in source_words_lower and len(clean) > 2
+            if i not in reduced_by_index:
+                saliency = baseline_sim
+            else:
+                reduced_sim = float(np.dot(reduced_by_index[i], chunk_vec))
+                saliency = baseline_sim - reduced_sim
 
             result.append({
                 "word": word,

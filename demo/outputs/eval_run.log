@@ -1,0 +1,94 @@
+
+============================================================
+  Loading RAG Hallucination Detection Pipeline
+============================================================
+[INFO] Loading embedding model: sentence-transformers/all-MiniLM-L6-v2
+[INFO] Embedding model loaded. Dim = 384
+[INFO] Generation backend: TinyLlama (TinyLlama/TinyLlama-1.1B-Chat-v1.0). The weights load on the first question.
+[INFO] Loading NLI model: cross-encoder/nli-deberta-v3-small
+[INFO] NLI device: mps
+[INFO] NLI model loaded successfully.
+[INFO] NLI label mapping: {'ENTAILMENT': 1, 'NEUTRAL': 2, 'CONTRADICTION': 0}
+[INFO] BERTScore ready (model: distilbert-base-uncased)
+============================================================
+  All models loaded. Pipeline ready.
+============================================================
+
+[INFO] Loaded FAISS index: 213 vectors, 213 chunks.
+[INFO] Reusing existing index (213 chunks).
+  What is Retrieval-Augmented Generation?                      done
+  Why is RAG not a guarantee against hallucination?            done
+  Can RAG run offline?                                         done
+  What does the typical RAG pipeline consist of?               done
+  What is a sentence embedding?                                done
+  What is all-MiniLM-L6-v2?                                    done
+  Why are embeddings normalized before indexing?               done
+  How is semantic search better than keyword search?           done
+  What is FAISS?                                               done
+  What index types does FAISS provide?                         done
+  Does a FAISS index update automatically when documents chang done
+  What is hallucination in large language models?              done
+  What is the difference between intrinsic and extrinsic hallu done
+  What causes hallucination?                                   done
+  How can hallucination be mitigated?                          done
+  What is Natural Language Inference?                          done
+  How is NLI used for hallucination detection?                 done
+  What is a cross-encoder NLI model?                           done
+  What is BERTScore?                                           done
+  How is BERTScore F1 computed?                                done
+  Does BERTScore need training data or internet access?        done
+  What is XAI in a retrieval system?                           done
+  What is word-level saliency?                                 done
+  What is provenance scoring?                                  done
+  What is the three-state decision scheme?                     done
+  When is an entire response blocked?                          done
+  Are the decision thresholds fixed?                           done
+  What is chunking and why does it matter?                     done
+  What is a common chunking configuration?                     done
+  What alternatives to fixed-size chunking exist?              done
+  What do precision and recall measure for hallucination detec done
+  What does AUROC measure?                                     done
+  Which error is more costly in hallucination detection?       done
+  What is Ollama?                                              done
+  What are the trade-offs of local inference?                  done
+  Why is prompt engineering not enough to prevent hallucinatio done
+  How can prompts reduce hallucination?                        done
+[INFO] ROC curve saved: /Users/ab45979/Downloads/main project/hallucination-control-rag-master/evaluation/results/demo_rerun_roc.png
+[INFO] Score distribution plot saved: /Users/ab45979/Downloads/main project/hallucination-control-rag-master/evaluation/results/demo_rerun_score_dist.png
+# Review 2 — measured results
+
+37 questions / 109 labelled claims (39 hallucinated) · 213-chunk index · weights (0.45, 0.35, 0.2) · thresholds 0.75/0.5
+
+## Overall (positive class = hallucinated)
+
+| P | R | F1 | AUC-ROC | Acc |
+|---|---|---|---|---|
+| 0.7949 | 0.7949 | 0.7949 | 0.8952 | 0.8532 |
+
+## Ablation
+
+| Config | P | R | F1 @0.50 | AUC | best-F1 (thr) |
+|---|---|---|---|---|---|
+| NLI only | 0.8049 | 0.8462 | 0.825 | 0.9342 | 0.8471 (0.92) |
+| BERTScore only | 0.0 | 0.0 | 0.0 | 0.7967 | 0.6667 (0.81) |
+| Cosine only | 0.3929 | 0.5641 | 0.4632 | 0.5744 | 0.5417 (0.75) |
+| NLI + BERTScore | 0.7895 | 0.7692 | 0.7792 | 0.9143 | 0.8539 (0.9) |
+| TrustRAG (all three) | 0.7949 | 0.7949 | 0.7949 | 0.8952 | 0.8395 (0.69) |
+
+## Evidence windows vs whole-chunk premises (all three signals)
+
+| Premise | P | R | F1 @0.50 | AUC | best-F1 (thr) |
+|---|---|---|---|---|---|
+| whole 512-token chunk | 0.3936 | 0.9487 | 0.5564 | 0.6863 | 0.5913 (0.4) |
+| 2-sentence windows (shipped) | 0.7949 | 0.7949 | 0.7949 | 0.8952 | 0.8395 (0.69) |
+
+## Tri-state distribution (% of claims)
+
+| Claim type | Supported | Weak | Hallucinated |
+|---|---|---|---|
+| Supported claims | 85.7 | 2.9 | 11.4 |
+| Hallucinated claims | 10.3 | 10.3 | 79.5 |
+
+## Retrieval (doc-level, k=5)
+
+Recall@5 0.7973 · MRR 0.7905 · NDCG@5 0.7669 · Hit@5 0.8378

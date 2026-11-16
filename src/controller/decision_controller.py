@@ -51,6 +51,7 @@ class ControlledResponse:
     warning_message:     str          = ""
     retrieved_chunks:    List[Dict[str, Any]] = field(default_factory=list) # Chunks from retrieval
     provenance_score:    float        = 0.0 # From XAI layer
+    generation_fallback: bool         = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -95,6 +96,7 @@ class DecisionController:
         raw_answer: str,
         retrieved_chunks: List[Dict[str, Any]] = None,
         provenance_score: float = 0.0,
+        generation_fallback: bool = False,
     ) -> ControlledResponse:
         """
         Apply tri-state logic and return a ControlledResponse.
@@ -128,6 +130,21 @@ class DecisionController:
                 retrieved_chunks,
                 provenance_score,
             )
+
+        if generation_fallback and retrieved_chunks:
+            # The local model did not write this text. The text is a retrieved
+            # passage, so it matches its own source and its scores are not evidence
+            # that an answer is grounded. Never show it as a cited answer.
+            partial = self._partial_answer(
+                verdicts, overall_score, hallucination_ratio, retrieved_chunks, provenance_score
+            )
+            partial.generation_fallback = True
+            partial.warning_message = (
+                "Note: TinyLlama did not generate an answer, so this is the retrieved "
+                "passage, not a generated answer. Its scores only show that the passage "
+                f"matches its own source. Overall grounding score: {overall_score:.2%}."
+            )
+            return partial
 
         if should_block:
             # Build fail-safe response with retrieved evidence & provenance
