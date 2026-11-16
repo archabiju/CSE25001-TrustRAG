@@ -57,15 +57,31 @@ class BERTScoreDetector:
         if self._scorer is None:
             import torch
 
-            device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
-            self._scorer = self._bert_score.BERTScorer(
-                lang=self.lang,
-                model_type=self.model_type,
-                device=device,
-                idf=False,
-                rescale_with_baseline=False,
-            )
+            if self.device:
+                device = self.device
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+            try:
+                self._scorer = self._make_scorer(device)
+            except Exception as e:
+                if device == "cpu":
+                    raise
+                print(f"[WARN] BERTScore on {device} failed ({e}). Using CPU.")
+                self._scorer = self._make_scorer("cpu")
         return self._scorer
+
+    def _make_scorer(self, device: str):
+        return self._bert_score.BERTScorer(
+            lang=self.lang,
+            model_type=self.model_type,
+            device=device,
+            idf=False,
+            rescale_with_baseline=False,
+        )
 
     def score_sentence(
         self,

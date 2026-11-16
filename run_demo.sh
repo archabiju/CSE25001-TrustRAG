@@ -8,19 +8,22 @@ export PYTHONUTF8=1
 
 if [ -f .venv/bin/activate ]; then source .venv/bin/activate
 elif [ -f .venv/Scripts/activate ]; then source .venv/Scripts/activate; fi
+
+# Use `python` if available, otherwise `python3` (some virtual environments only provide python3).
+if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
 mkdir -p demo/outputs
 
 echo "== 1/4 Environment and model/config versions =="
-python demo/record_versions.py | tee demo/outputs/versions.txt
+$PY demo/record_versions.py | tee demo/outputs/versions.txt
 
 echo; echo "== 2/4 Build or reuse the FAISS index =="
-python src/pipeline.py 2>&1 | tail -n 3
+$PY src/pipeline.py 2>&1 | tail -n 3
 
 echo; echo "== 3/4 Demo queries (live pipeline + tri-state demonstration) =="
-python demo/demo_run.py
+$PY demo/demo_run.py
 
 echo; echo "== 4/4 Regenerate evaluation metrics (37 questions, 109 claims) =="
-python evaluation/run_review2_eval.py --output-prefix demo_rerun | tee demo/outputs/eval_run.log
+$PY evaluation/run_review2_eval.py --output-prefix demo_rerun | tee demo/outputs/eval_run.log
 
 echo; echo "Done. Outputs:"
 echo "  demo/outputs/versions.txt  sample_outputs.txt/.json  eval_run.log"

@@ -51,6 +51,7 @@ class ControlledResponse:
     warning_message:     str          = ""
     retrieved_chunks:    List[Dict[str, Any]] = field(default_factory=list) # Chunks from retrieval
     provenance_score:    float        = 0.0 # From XAI layer
+    generation_fallback: bool         = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -95,6 +96,7 @@ class DecisionController:
         raw_answer: str,
         retrieved_chunks: List[Dict[str, Any]] = None,
         provenance_score: float = 0.0,
+        generation_fallback: bool = False,
     ) -> ControlledResponse:
         """
         Apply tri-state logic and return a ControlledResponse.
@@ -116,22 +118,50 @@ class DecisionController:
         # ── STATE 3: Block ────────────────────────────────────────────────
         should_block = (
             overall_score < self.medium_thr or
-            hallucination_ratio > self.max_block or
-            provenance_score < 0.25
+            hallucination_ratio > self.max_block
         )
 
         if not verdicts or not raw_answer.strip():
             return self._blocked(
                 overall_score,
                 hallucination_ratio,
-                "I do not have any relevant documents related to that question in my knowledge base.",
+                "No relevant documents found for this query.",
                 [],
                 retrieved_chunks,
                 provenance_score,
             )
 
+        if generation_fallback and retrieved_chunks:
+            # The local model did not write this text. The text is a retrieved
+            # passage, so it matches its own source and its scores are not evidence
+            # that an answer is grounded. Never show it as a cited answer.
+            partial = self._partial_answer(
+                verdicts, overall_score, hallucination_ratio, retrieved_chunks, provenance_score
+            )
+            partial.generation_fallback = True
+            partial.warning_message = (
+                "Note: TinyLlama did not generate an answer, so this is the retrieved "
+                "passage, not a generated answer. Its scores only show that the passage "
+                f"matches its own source. Overall grounding score: {overall_score:.2%}."
+            )
+            return partial
+
         if should_block:
-            blocked_reason = "I do not have any relevant documents related to that question in my knowledge base."
+            # Build fail-safe response with retrieved evidence & provenance
+            evidence_parts = []
+            for i, chunk in enumerate(retrieved_chunks):
+                source = chunk.get("source_file", "unknown")
+                page = chunk.get("page_num", "?")
+                text = chunk.get("text", "").strip()
+                evidence_parts.append(f"[Evidence {i+1}] Source: {source}, Page: {page}\n\"{text}\"")
+
+            evidence_text = "\n\n".join(evidence_parts)
+            blocked_reason = (
+                "I cannot find reliable evidence in the provided documents to "
+                "answer this question confidently. The response has been blocked due to high hallucination risk. "
+                "Here is the raw retrieved source evidence instead:\n\n"
+                f"{evidence_text}"
+            )
             return self._blocked(
                 overall_score,
                 hallucination_ratio,

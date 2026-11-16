@@ -1,500 +1,507 @@
 """
-Streamlit UI — Conversational Interface (ChatGPT Style)
-=======================================================
-A modern, conversational interface for the Explainability-Driven Hallucination
-Detection Framework. 
+Streamlit UI — TrustRAG conversational dashboard
+================================================
+Chat interface for the explainability-driven hallucination detection framework.
 
-Features:
-  • ChatGPT-like chat history and input.
-  • Color-coded sentences (Green=Supported, Yellow=Weak, Red=Hallucinated)
-    rendered directly in the chat bubble.
-  • Expandable "Explainability & Detection Logs" panel inside each AI response
-    to show charts, provenance scores, and retrieved chunks.
-  • Sidebar for indexing and configuration.
+  • Models and the FAISS index load once per server (st.cache_resource), not per tab.
+  • Each answer is colour-coded per sentence (green supported, amber weak, red hallucinated).
+  • Explainability charts render only when a message's details are opened.
+  • A new window starts on a blank chat. Past chats are listed in the sidebar.
 """
 
+import html
+import json
 import os
-import re
+import pickle
 import sys
 import time
 from pathlib import Path
 
-# Add project root to path
+# Use the models already downloaded. Do not contact Hugging Face on each question.
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
 PROJECT_ROOT = str(Path(__file__).parent.parent)
 sys.path.insert(0, PROJECT_ROOT)
 os.chdir(PROJECT_ROOT)
 
-import streamlit as st
-import plotly.graph_objects as go
 import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Page config & Custom CSS
-# ─────────────────────────────────────────────────────────────────────────────
+CHATS_FILE = Path(PROJECT_ROOT) / "data" / "chats.pkl"
+LEGACY_HISTORY_FILE = Path(PROJECT_ROOT) / "data" / "chat_history.pkl"
 
-st.set_page_config(
-    page_title="TrustRAG",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded",
+GREETING = (
+    "Hello! I answer questions from the documents in `data/corpus/`. "
+    "Every sentence I write is checked against the retrieved evidence: supported sentences "
+    "are cited, weak ones are flagged, and unsupported answers are blocked."
 )
+
+EXAMPLES = [
+    ("✅ Cited", "What is BERTScore?"),
+    ("⚠️ Partial", "What is Retrieval-Augmented Generation?"),
+    ("🚫 Hallucination caught", "What is FAISS?"),
+    ("🚫 Out of scope", "Who won the 2022 FIFA World Cup?"),
+]
+
+VERDICT_COLORS = {"SUPPORTED": "#22c55e", "WEAKLY_SUPPORTED": "#f59e0b", "HALLUCINATED": "#ef4444"}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Page config & CSS
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.set_page_config(page_title="TrustRAG", page_icon="🛡️", layout="wide",
+                   initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
-    /* Premium Dark Theme */
-    .stApp {
-        background: #0E1117;
-        color: #FAFAFA;
-    }
+    .stApp { background: #0E1117; color: #E5E7EB; }
+    .block-container { padding-top: 1.6rem; max-width: 1100px; }
 
-    /* Top Header */
-    .header-container {
-        text-align: center;
-        padding: 1.5rem 0;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-        margin-bottom: 2rem;
-        background: linear-gradient(180deg, rgba(30,30,47,0.8) 0%, rgba(14,17,23,0) 100%);
-    }
-    .main-title {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-size: 2.2rem;
-        font-weight: 800;
-        margin-bottom: 0.2rem;
-    }
-    .sub-title {
-        color: #94a3b8;
-        font-size: 0.95rem;
-    }
+    .header { text-align: center; padding: 0.6rem 0 1.2rem 0; margin-bottom: 1.2rem;
+              border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .title { background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+             font-size: 2.1rem; font-weight: 800; letter-spacing: -0.02em; }
+    .subtitle { color: #94a3b8; font-size: 0.92rem; margin-top: 0.15rem; }
 
-    /* Sentence color coding within chat */
-    .sent-supported {
-        background-color: rgba(34,197,94,0.12);
-        border-bottom: 2px solid #22c55e;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin: 2px 2px;
-        display: inline;
-        font-size: 1rem !important;
-        font-weight: 400 !important;
-        line-height: 1.7 !important;
-        color: #f1f5f9 !important;
-    }
-    .sent-weak {
-        background-color: rgba(245,158,11,0.12);
-        border-bottom: 2px solid #f59e0b;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin: 2px 2px;
-        display: inline;
-        font-size: 1rem !important;
-        font-weight: 400 !important;
-        line-height: 1.7 !important;
-        color: #f1f5f9 !important;
-    }
-    .sent-hallucinated {
-        background-color: rgba(239,68,68,0.12);
-        border-bottom: 2px solid #ef4444;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin: 2px 2px;
-        display: inline;
-        font-size: 1rem !important;
-        font-weight: 400 !important;
-        line-height: 1.7 !important;
-        color: #fca5a5 !important;
-        text-decoration: line-through;
-    }
+    .answer { font-size: 1rem; line-height: 1.75; }
+    .sent-supported { background: rgba(34,197,94,0.10); border-bottom: 2px solid #22c55e;
+                      padding: 1px 4px; border-radius: 4px; }
+    .sent-weak { background: rgba(245,158,11,0.10); border-bottom: 2px solid #f59e0b;
+                 padding: 1px 4px; border-radius: 4px; }
+    .sent-hallucinated { background: rgba(239,68,68,0.10); border-bottom: 2px solid #ef4444;
+                         padding: 1px 4px; border-radius: 4px; color: #fca5a5;
+                         text-decoration: line-through; }
+    .cite { color: #93c5fd; font-size: 0.8rem; margin-left: 2px; }
 
-    /* Status Badges */
-    .status-badge {
-        font-size: 0.75rem;
-        font-weight: 600;
-        padding: 4px 10px;
-        border-radius: 12px;
-        display: inline-block;
-        margin-bottom: 8px;
-    }
-    .badge-cite { background: rgba(34,197,94,0.2); color: #4ade80; border: 1px solid rgba(34,197,94,0.5); }
-    .badge-warn { background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.5); }
-    .badge-block { background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.5); }
-    
-    /* Enforce normal readable text size across all chat messages and alerts */
-    .stChatMessage, .stChatMessage p, .stChatMessage div {
-        font-size: 1rem !important;
-        line-height: 1.7 !important;
-    }
-    .stChatMessage h1, .stChatMessage h2, .stChatMessage h3,
-    .stAlert h1, .stAlert h2, .stAlert h3 {
-        font-size: 1.05rem !important;
-        font-weight: 600 !important;
-        line-height: 1.5 !important;
-        display: inline !important;
-    }
+    .badge { font-size: 0.75rem; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+             display: inline-block; margin: 0 6px 8px 0; }
+    .badge-cite  { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(34,197,94,0.45); }
+    .badge-warn  { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.45); }
+    .badge-block { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(239,68,68,0.45); }
+    .badge-info  { background: rgba(148,163,184,0.12); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.35); }
 
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    .evidence { font-size: 0.92rem; line-height: 1.6; padding: 0.6rem 0.8rem; margin: 0.4rem 0;
+                border-left: 3px solid #6366f1; background: #151a22; border-radius: 4px; }
+    .evidence-head { color: #93c5fd; font-size: 0.82rem; margin-bottom: 0.25rem; }
+
+    .status-row { font-size: 0.85rem; margin: 0.15rem 0; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .dot-ok { background: #22c55e; } .dot-warn { background: #f59e0b; } .dot-bad { background: #ef4444; }
+
+    .saliency { line-height: 2.0; padding: 10px 12px; border-radius: 5px; background: #151a22;
+                border-left: 3px solid #6366f1; margin-bottom: 10px; }
+
+    #MainMenu { visibility: hidden; } footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Session state init & Pre-warmed Pipeline Cache
+# Pipeline (loaded once per server process)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_resource(show_spinner="Pre-warming models in memory for <30s responses...")
+@st.cache_resource(show_spinner=False)
 def get_pipeline():
     from src.pipeline import RAGHallucinationPipeline
     pipe = RAGHallucinationPipeline()
     pipe._load_models()
-    return pipe
+    stats = pipe.index_documents()          # reuses data/index if it exists
+    pipe.generator.warmup()
+    return pipe, stats
 
-if "pipeline" not in st.session_state:
-    st.session_state.pipeline = None
-if "index_stats" not in st.session_state:
-    st.session_state.index_stats = None
-if "models_loaded" not in st.session_state:
-    st.session_state.models_loaded = False
+
+def _plain_text(text: str) -> str:
+    """Document text as one escaped paragraph, so Markdown marks never render as headings."""
+    return html.escape(" ".join((text or "").split()).lstrip("# "))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat history persistence
+# ─────────────────────────────────────────────────────────────────────────────
+
+def blank_messages():
+    return [{"role": "assistant", "content": GREETING, "result": None}]
+
+
+def chat_title(messages) -> str:
+    for message in messages:
+        if message.get("role") == "user" and (message.get("content") or "").strip():
+            title = " ".join(message["content"].split())
+            return title[:42] + ("…" if len(title) > 42 else "")
+    return "New chat"
+
+
+def has_user_message(messages) -> bool:
+    return any(m.get("role") == "user" and (m.get("content") or "").strip() for m in messages)
+
+
+def _write_chats(chats) -> None:
+    CHATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CHATS_FILE, "wb") as f:
+        pickle.dump(chats, f)
+
+
+def load_chats():
+    """Past conversations, newest first. A new window does not open one of them."""
+    chats = []
+    if CHATS_FILE.exists():
+        try:
+            with open(CHATS_FILE, "rb") as f:
+                loaded = pickle.load(f)
+            if isinstance(loaded, list):
+                chats = [c for c in loaded if isinstance(c, dict) and c.get("messages")]
+        except Exception as e:
+            print(f"[WARN] Could not read saved chats ({e}).")
+    if LEGACY_HISTORY_FILE.exists():
+        try:
+            with open(LEGACY_HISTORY_FILE, "rb") as f:
+                messages = pickle.load(f)
+            if isinstance(messages, list) and has_user_message(messages):
+                chats.insert(0, {
+                    "id": "legacy",
+                    "title": chat_title(messages),
+                    "updated": LEGACY_HISTORY_FILE.stat().st_mtime,
+                    "messages": messages,
+                })
+                _write_chats(chats)
+        except Exception as e:
+            print(f"[WARN] Could not import the old chat history ({e}).")
+        LEGACY_HISTORY_FILE.unlink(missing_ok=True)
+    chats.sort(key=lambda c: c.get("updated", 0), reverse=True)
+    return chats
+
+
+def persist_current_chat() -> None:
+    """Save the open conversation into the sidebar list. Greeting-only chats are not stored."""
+    messages = st.session_state.messages
+    if not has_user_message(messages):
+        return
+    chats = st.session_state.chats
+    active = st.session_state.active_chat_id
+    now = time.time()
+    match = next((c for c in chats if c["id"] == active), None)
+    if match is None:
+        active = str(int(now * 1000))
+        st.session_state.active_chat_id = active
+        match = {"id": active, "messages": messages}
+        chats.insert(0, match)
+    match["messages"] = messages
+    match["title"] = chat_title(messages)
+    match["updated"] = now
+    chats.sort(key=lambda c: c.get("updated", 0), reverse=True)
+    try:
+        _write_chats(chats)
+    except Exception as e:
+        print(f"[WARN] Could not save chats: {e}")
+
+
+if "chats" not in st.session_state:
+    st.session_state.chats = load_chats()
+if "active_chat_id" not in st.session_state:
+    st.session_state.active_chat_id = None
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! I am your offline, explainability-driven RAG assistant. Build the document index from the sidebar, then ask me anything. I will cite my sources and flag any hallucinations.", "result": None}
-    ]
+    st.session_state.messages = blank_messages()
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper to render XAI charts inside the chat
+# Load models (first run shows a progress message)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_explainability_panel(result, key_prefix=""):
-    """Renders the detailed charts and tables for a given pipeline result."""
-    
-    # 1. Top Metrics
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        score = result.summary.get("overall_support_score", 0)
-        st.metric("Grounding Score", f"{score:.1%}")
-    with col2:
-        prov = result.xai_report.get("provenance", {}).get("provenance_score", 0)
-        st.metric("Provenance Score", f"{prov:.1%}")
-    with col3:
-        n_hal = result.summary.get("num_hallucinated", 0)
-        total = result.summary.get("total_sentences", 0)
-        st.metric("Hallucinated Claims", f"{n_hal} / {total}")
-    with col4:
-        latency = result.summary.get("latency", 0.0)
-        st.metric("Query Latency", f"{latency:.2f}s")
-    with col5:
-        n_cited = len(result.response.cited_sources) if result.response else 0
-        st.metric("Sources Cited", n_cited)
+with st.spinner("Loading models and the document index (first start only)..."):
+    pipe, index_stats = get_pipeline()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sidebar
+# ─────────────────────────────────────────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown("### Chats")
+    if st.button("＋ New chat", width="stretch"):
+        st.session_state.messages = blank_messages()
+        st.session_state.active_chat_id = None
+        st.rerun()
+
+    if st.session_state.chats:
+        st.caption("Past chats")
+    for chat in st.session_state.chats:
+        open_col, delete_col = st.columns([5, 1])
+        label = chat["title"]
+        if chat["id"] == st.session_state.active_chat_id:
+            label = "● " + label
+        if open_col.button(label, key=f"open_{chat['id']}", width="stretch"):
+            st.session_state.messages = chat["messages"]
+            st.session_state.active_chat_id = chat["id"]
+            st.rerun()
+        if delete_col.button("✕", key=f"del_{chat['id']}", help="Delete this chat"):
+            st.session_state.chats = [c for c in st.session_state.chats if c["id"] != chat["id"]]
+            if st.session_state.active_chat_id == chat["id"]:
+                st.session_state.messages = blank_messages()
+                st.session_state.active_chat_id = None
+            try:
+                _write_chats(st.session_state.chats)
+            except Exception as e:
+                print(f"[WARN] Could not update saved chats: {e}")
+            st.rerun()
 
     st.markdown("---")
+    st.markdown("### 🛡️ System status")
 
-    # 2. JSON Export & Table
-    col_dl, col_lbl = st.columns([1, 4])
-    with col_dl:
-        import json
-        export_data = {
+    n_chunks = pipe.faiss_store.num_chunks if pipe.faiss_store.is_loaded() else 0
+    gen_status = pipe.generator.status
+    gen_ok = gen_status.startswith("TinyLlama ready") or gen_status.startswith("Ollama:")
+    rows = [
+        ("ok" if n_chunks else "bad", f"Index: {n_chunks} chunks"),
+        ("ok" if gen_ok else "warn", f"Generator: {gen_status}"),
+        ("ok", f"NLI: {pipe.nli_model.split('/')[-1]}"),
+        ("ok", f"BERTScore: {pipe.bs_model}"),
+    ]
+    st.markdown("".join(
+        f'<div class="status-row"><span class="dot dot-{s}"></span>{html.escape(t)}</div>'
+        for s, t in rows
+    ), unsafe_allow_html=True)
+
+    if st.button("🔨 Rebuild document index", width="stretch"):
+        with st.spinner("Re-indexing data/corpus ..."):
+            try:
+                stats = pipe.index_documents(force_reindex=True)
+                st.success(f"Indexed {stats.get('num_chunks', '?')} chunks.")
+            except Exception as e:
+                st.error(f"Indexing failed: {e}")
+
+    st.markdown("---")
+    with st.expander("🎛️ Detection tuning", expanded=False):
+        w_nli = st.slider("NLI weight", 0.0, 1.0, float(pipe.w_nli), 0.05)
+        w_bert = st.slider("BERTScore weight", 0.0, 1.0, float(pipe.w_bert), 0.05)
+        w_cos = st.slider("Cosine weight", 0.0, 1.0, float(pipe.w_cos), 0.05)
+        high_threshold = st.slider("Cite at or above", 0.0, 1.0, float(pipe.high_thr), 0.05)
+        medium_threshold = st.slider("Warn at or above", 0.0, 1.0, float(pipe.medium_thr), 0.05)
+        w_total = w_nli + w_bert + w_cos
+        if w_total <= 0:
+            w_nli, w_bert, w_cos, w_total = float(pipe.w_nli), float(pipe.w_bert), float(pipe.w_cos), 1.0
+            st.caption("All weights are zero; using the configured weights.")
+        elif abs(w_total - 1.0) > 1e-6:
+            st.caption(f"Weights sum to {w_total:.2f}; they are rescaled to sum to 1.")
+        w_nli, w_bert, w_cos = w_nli / w_total, w_bert / w_total, w_cos / w_total
+
+    if st.session_state.chats and st.button("🗑️ Delete all chats", width="stretch"):
+        st.session_state.chats = []
+        st.session_state.messages = blank_messages()
+        st.session_state.active_chat_id = None
+        CHATS_FILE.unlink(missing_ok=True)
+        st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Explainability panel (rendered only when opened)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_explainability_panel(result, key_suffix):
+    tab_claims, tab_charts, tab_saliency, tab_chunks = st.tabs(
+        ["Per-claim log", "Charts", "Word saliency", "Retrieved chunks"]
+    )
+
+    with tab_claims:
+        if result.verdicts:
+            st.dataframe(pd.DataFrame([{
+                "#": v.sentence_idx + 1,
+                "Claim": v.sentence,
+                "NLI": round(v.nli_score, 3),
+                "BERTScore": round(v.bertscore_f1, 3),
+                "Cosine": round(v.cosine_score, 3),
+                "Score": round(v.support_score, 3),
+                "Verdict": v.classification,
+            } for v in result.verdicts]), width="stretch", hide_index=True)
+
+        export = {
             "query": result.query,
             "raw_answer": result.raw_answer,
+            "state": result.response.state if result.response else None,
             "overall_support_score": result.summary.get("overall_support_score"),
             "provenance_score": result.xai_report.get("provenance", {}).get("provenance_score"),
             "latency_seconds": result.summary.get("latency"),
             "verdicts": [v.to_dict() for v in result.verdicts] if result.verdicts else [],
             "retrieved_chunks": result.retrieved_chunks,
         }
-        json_str = json.dumps(export_data, indent=2)
-        st.download_button(
-            label="📥 Export Audit JSON",
-            data=json_str,
-            file_name=f"audit_report_{int(time.time())}.json",
-            mime="application/json",
-            use_container_width=True,
-            key=f"dl_audit_{key_prefix}_{abs(hash(result.query)) % 1000000}",
-        )
-    with col_lbl:
-        st.markdown("**📊 Per-Claim Detection Log**")
+        st.download_button("📥 Export audit JSON", data=json.dumps(export, indent=2, default=str),
+                           file_name=f"audit_report_{key_suffix}.json", mime="application/json",
+                           key=f"audit_download_{key_suffix}")
 
-    if result.verdicts:
-        rows = []
-        for v in result.verdicts:
-            rows.append({
-                "#": v.sentence_idx + 1,
-                "Claim": v.sentence[:60] + "…",
-                "NLI (DeBERTa)": f"{v.nli_score:.3f}",
-                "BERTScore": f"{v.bertscore_f1:.3f}",
-                "Cosine": f"{v.cosine_score:.3f}",
-                "Final Score": f"{v.support_score:.3f}",
-                "Verdict": v.classification,
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    # 3. Charts side-by-side
-    st.markdown("---")
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        st.markdown("**🔍 Radar: Evidence Breakdown**")
+    with tab_charts:
         if result.verdicts:
-            fig_radar = go.Figure()
-            colors = {"SUPPORTED": "#22c55e", "WEAKLY_SUPPORTED": "#f59e0b", "HALLUCINATED": "#ef4444"}
-            for v in result.verdicts:
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=[v.nli_score, v.bertscore_f1, v.cosine_score, v.support_score, v.nli_score],
-                    theta=["NLI", "BERTScore", "Cosine", "Aggregate", "NLI"],
-                    name=f"Claim {v.sentence_idx+1}",
-                    line=dict(color=colors.get(v.classification, "#64748b")),
-                    fill="toself", opacity=0.15,
+            c1, c2 = st.columns(2)
+            with c1:
+                fig = go.Figure()
+                for v in result.verdicts:
+                    fig.add_trace(go.Scatterpolar(
+                        r=[v.nli_score, v.bertscore_f1, v.cosine_score, v.support_score, v.nli_score],
+                        theta=["NLI", "BERTScore", "Cosine", "Score", "NLI"],
+                        name=f"Claim {v.sentence_idx + 1}",
+                        line=dict(color=VERDICT_COLORS.get(v.classification, "#64748b")),
+                        fill="toself", opacity=0.2,
+                    ))
+                fig.update_layout(polar=dict(bgcolor="rgba(0,0,0,0)", radialaxis=dict(range=[0, 1])),
+                                  paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3b8"),
+                                  height=280, margin=dict(l=40, r=40, t=20, b=20))
+                st.plotly_chart(fig, width="stretch", key=f"radar_{key_suffix}")
+            with c2:
+                fig = go.Figure(go.Bar(
+                    x=[v.support_score for v in result.verdicts],
+                    y=[f"Claim {v.sentence_idx + 1}" for v in result.verdicts],
+                    orientation="h",
+                    marker_color=[VERDICT_COLORS.get(v.classification, "#64748b") for v in result.verdicts],
+                    text=[f"{v.support_score:.2f}" for v in result.verdicts], textposition="auto",
+                    hovertext=[v.sentence for v in result.verdicts], hoverinfo="text+x",
                 ))
-            fig_radar.update_layout(
-                polar=dict(bgcolor="rgba(0,0,0,0)"),
-                paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3b8"),
-                height=250, margin=dict(l=40, r=40, t=20, b=20)
-            )
-            st.plotly_chart(fig_radar, use_container_width=True)
+                for thr, color in ((pipe.controller.high_thr, "#22c55e"), (pipe.controller.medium_thr, "#f59e0b")):
+                    fig.add_vline(x=thr, line_dash="dot", line_color=color)
+                fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  xaxis=dict(title="Support score", range=[0, 1.05]),
+                                  yaxis=dict(autorange="reversed"), font=dict(color="#94a3b8"),
+                                  height=280, margin=dict(l=60, r=20, t=20, b=20))
+                st.plotly_chart(fig, width="stretch", key=f"bar_{key_suffix}")
 
-    with chart_col2:
-        st.markdown("**📊 Per-Claim Trust Scores**")
-        if result.verdicts:
-            fig_bar = go.Figure()
-            colors_map = {"SUPPORTED": "#22c55e", "WEAKLY_SUPPORTED": "#f59e0b", "HALLUCINATED": "#ef4444"}
-            y_labels = [f"Claim {v.sentence_idx+1}" for v in result.verdicts]
-            scores = [v.support_score for v in result.verdicts]
-            bar_colors = [colors_map.get(v.classification, "#64748b") for v in result.verdicts]
-            hover_texts = [v.sentence for v in result.verdicts]
-            
-            fig_bar.add_trace(go.Bar(
-                x=scores,
-                y=y_labels,
-                orientation='h',
-                marker_color=bar_colors,
-                text=[f"{s:.2f}" for s in scores],
-                textposition='auto',
-                hovertext=hover_texts,
-                hoverinfo='text+x',
-            ))
-            fig_bar.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis=dict(title="Trust Score", range=[0, 1.05], gridcolor="rgba(255,255,255,0.05)"),
-                yaxis=dict(autorange="reversed"),
-                font=dict(color="#94a3b8"),
-                height=250,
-                margin=dict(l=60, r=20, t=20, b=20),
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-    # 4. Word-Level Saliency maps
-    st.markdown("---")
-    st.markdown("**🔥 Word-Level Saliency Heatmaps (Leave-One-Out Embedding)**")
-    
-    for attr in result.xai_report.get("attributions", []):
-        s_idx = attr.get("sentence_idx", 0)
-        saliency_data = attr.get("word_saliency", [])
-        
-        if saliency_data:
-            # Build HTML string
-            html_parts = []
-            for word_info in saliency_data:
-                word = word_info.get("word", "")
-                sal = word_info.get("saliency", 0.0)
-                
-                # Style background color based on saliency magnitude and sign
+    with tab_saliency:
+        st.caption("Green words anchor the sentence to its evidence; red words pull it away "
+                   "(leave-one-out embedding saliency).")
+        for attr in result.xai_report.get("attributions", []):
+            parts = []
+            for w in attr.get("word_saliency", []):
+                sal = w.get("saliency", 0.0)
+                word = html.escape(w.get("word", ""))
                 if sal > 0.002:
-                    # Positive saliency: word anchors to evidence
-                    alpha = min(0.65, 0.08 + sal * 4.0)
-                    bg_style = f"background-color: rgba(34, 197, 94, {alpha:.2f}); color: #ffffff; border-radius: 3px; padding: 1px 3px; border-bottom: 1.5px solid rgba(34, 197, 94, 0.6);"
+                    style = f"background: rgba(34,197,94,{min(0.65, 0.08 + sal * 4):.2f}); border-radius:3px; padding:1px 3px;"
                 elif sal < -0.002:
-                    # Negative saliency: word pulls sentence away
-                    alpha = min(0.65, 0.08 + abs(sal) * 4.0)
-                    bg_style = f"background-color: rgba(239, 68, 68, {alpha:.2f}); color: #ffffff; border-radius: 3px; padding: 1px 3px; border-bottom: 1.5px solid rgba(239, 68, 68, 0.6);"
+                    style = f"background: rgba(239,68,68,{min(0.65, 0.08 + abs(sal) * 4):.2f}); border-radius:3px; padding:1px 3px;"
                 else:
-                    # Near zero
-                    bg_style = "color: #94a3b8; border-radius: 3px; padding: 1px 3px;"
-                    
-                html_parts.append(f'<span style="{bg_style}">{word}</span>')
-                
-            sentence_html = " ".join(html_parts)
-            st.markdown(f"**Claim {s_idx+1}:**", unsafe_allow_html=True)
-            st.markdown(f'<div style="line-height: 2.0; margin-bottom: 15px; background-color: #1a1e24; padding: 12px; border-radius: 5px; border-left: 3px solid #6366f1;">{sentence_html}</div>', unsafe_allow_html=True)
+                    style = "color:#94a3b8; padding:1px 3px;"
+                parts.append(f'<span style="{style}">{word}</span>')
+            if parts:
+                st.markdown(f"**Claim {attr.get('sentence_idx', 0) + 1}**")
+                st.markdown(f'<div class="saliency">{" ".join(parts)}</div>', unsafe_allow_html=True)
 
-    # 5. Retrieved Chunks
-    st.markdown("---")
-    st.markdown("**📄 Retrieved Document Chunks**")
-    if result.retrieved_chunks:
-        for i, chunk in enumerate(result.retrieved_chunks):
-            sim = chunk.get("similarity_score", 0)
-            src = chunk.get('source_file', '?')
-            pg = chunk.get('page_num', '?')
-            with st.expander(f"Chunk {i+1} — {src} (Sim: {sim:.2f})"):
-                st.caption(f"Page: {pg}")
-                st.write(chunk.get("text", ""))
+    with tab_chunks:
+        for i, chunk in enumerate(result.retrieved_chunks or []):
+            st.markdown(
+                f'<div class="evidence"><div class="evidence-head">#{i + 1} · '
+                f'{html.escape(str(chunk.get("source_file", "?")))}, p.{html.escape(str(chunk.get("page_num", "?")))} '
+                f'· similarity {float(chunk.get("similarity_score", 0.0)):.3f}</div>'
+                f'{_plain_text(chunk.get("text", ""))}</div>',
+                unsafe_allow_html=True,
+            )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Sidebar Configuration
-# ─────────────────────────────────────────────────────────────────────────────
+def render_answer(res, idx):
+    resp = res.response
+    fallback = getattr(resp, "generation_fallback", False)
+    score = res.summary.get("overall_support_score", 0.0)
+    n_hal = res.summary.get("num_hallucinated", 0)
+    total = res.summary.get("total_sentences", 0)
+    latency = res.summary.get("latency", 0.0)
 
-with st.sidebar:
-    st.markdown("### ⚙️ Engine Settings")
-    
-    corpus_dir = st.text_input("Corpus Directory", value="data/corpus")
-    
-    selected_model = st.selectbox(
-        "Local LLM Model",
-        ["tinyllama (⚡ Fast CPU Demo - 1.1B)", "mistral (🖥️ High-Accuracy - 7B)"],
-        index=0,
-        help="TinyLlama-1.1B provides instant <5s CPU live responses. Mistral-7B is our high-capacity offline model."
-    )
-    model_name_choice = "tinyllama" if "tinyllama" in selected_model else "mistral"
+    badge = {
+        "ANSWER_WITH_CITATIONS": ('badge-cite', '✅ Cited answer'),
+        "PARTIAL_ANSWER": ('badge-warn', '⚠️ Partial answer'),
+    }.get(resp.state, ('badge-block', '🚫 Blocked'))
+    badges = [f'<span class="badge {badge[0]}">{badge[1]}</span>',
+              f'<span class="badge badge-info">Grounding {score:.0%}</span>',
+              f'<span class="badge badge-info">Flagged {n_hal}/{total}</span>',
+              f'<span class="badge badge-info">{latency:.1f}s</span>']
+    if fallback:
+        badges.append('<span class="badge badge-info">Retrieved passage, not generated</span>')
+    st.markdown("".join(badges), unsafe_allow_html=True)
 
-    top_k_val = st.slider(
-        "Context Chunks (Top-K)",
-        min_value=1,
-        max_value=6,
-        value=3,
-        help="Fewer chunks (e.g. 2-3) speeds up prompt processing significantly on CPU."
-    )
+    if resp.state == "BLOCKED":
+        st.error("I could not find enough support in the documents to answer this reliably. "
+                 "Here is the closest evidence instead.")
+        for i, chunk in enumerate((resp.retrieved_chunks or [])[:3]):
+            st.markdown(
+                f'<div class="evidence"><div class="evidence-head">Evidence {i + 1} · '
+                f'{html.escape(str(chunk.get("source_file", "")))}, p.{html.escape(str(chunk.get("page_num", "")))} '
+                f'· similarity {float(chunk.get("similarity_score", 0.0)):.3f}</div>'
+                f'{_plain_text(chunk.get("text", ""))}</div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        if resp.warning_message:
+            st.caption(resp.warning_message)
+        parts = []
+        for v in res.verdicts:
+            sentence = html.escape(v.sentence or "")
+            if fallback or v.classification == "WEAKLY_SUPPORTED":
+                parts.append(f'<span class="sent-weak">{sentence}</span>')
+            elif v.classification == "SUPPORTED":
+                cite = f'<span class="cite">[{html.escape(str(v.source_file))}, p.{html.escape(str(v.source_page))}]</span>'
+                parts.append(f'<span class="sent-supported">{sentence}</span>{cite}')
+            else:
+                parts.append(f'<span class="sent-hallucinated">{sentence}</span>')
+        st.markdown(f'<div class="answer">{" ".join(parts)}</div>', unsafe_allow_html=True)
+        if resp.cited_sources:
+            st.caption("Sources: " + ", ".join(resp.cited_sources))
 
-    if st.button("🔨 Build Document Index", use_container_width=True, type="primary"):
-        with st.spinner("Indexing documents..."):
-            try:
-                pipe = get_pipeline()
-                stats = pipe.index_documents(corpus_dir=corpus_dir, force_reindex=True)
-                st.session_state.index_stats = stats
-                st.session_state.models_loaded = True
-                st.success(f"✅ Indexed {stats.get('num_chunks', '?')} chunks!")
-            except Exception as e:
-                st.error(f"❌ Indexing failed: {e}")
-
-    if st.session_state.index_stats:
-        st.info(f"Database active: {st.session_state.index_stats.get('num_chunks')} chunks.")
-    
-    st.markdown("---")
-    st.markdown("### 🎛️ Detection Tuning")
-    w_nli = st.slider("NLI Weight", 0.0, 1.0, 0.45, 0.05)
-    w_bert = st.slider("BERTScore Weight", 0.0, 1.0, 0.35, 0.05)
-    w_cos = st.slider("Cosine Weight", 0.0, 1.0, 0.20, 0.05)
-    
-    st.markdown("### 🎯 Decision Thresholds")
-    high_threshold = st.slider("High Support (Cite)", 0.0, 1.0, 0.75, 0.05)
-    medium_threshold = st.slider("Medium Support (Warn)", 0.0, 1.0, 0.50, 0.05)
-
-    if st.button("🗑️ Clear Chat History"):
-        st.session_state.messages = [st.session_state.messages[0]]
-        st.rerun()
+    details_key = f"{st.session_state.active_chat_id or 'draft'}_{idx}"
+    if st.toggle("Show explainability details", key=f"details_{details_key}"):
+        render_explainability_panel(res, details_key)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main Chat Interface
+# Main chat
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.markdown("""
-<div class="header-container">
-     <div class="main-title">🛡️ TrustRAG</div>
-     <div class="sub-title">Trustworthy Offline RAG with Explainable Multi-Signal Hallucination Detection</div>
+<div class="header">
+  <div class="title">🛡️ TrustRAG</div>
+  <div class="subtitle">Offline RAG with explainable, multi-signal hallucination detection</div>
 </div>
 """, unsafe_allow_html=True)
 
-# Render Chat History
-for msg_idx, msg in enumerate(st.session_state.messages):
+for idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"]):
         if msg["role"] == "assistant" and msg.get("result") is not None:
-            # It's an AI response with pipeline data
-            res = msg["result"]
-            resp = res.response
-            
-            # 1. Render Status Badge
-            if resp.state == "ANSWER_WITH_CITATIONS":
-                st.markdown('<div class="status-badge badge-cite">✅ Cited Answer</div>', unsafe_allow_html=True)
-            elif resp.state == "PARTIAL_ANSWER":
-                st.markdown('<div class="status-badge badge-warn">⚠️ Partial Answer</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="status-badge badge-block">🚫 Blocked</div>', unsafe_allow_html=True)
-            
-            # 2. Render Color-Coded Text or Blocked Evidence Egress
-            if resp.state == "BLOCKED":
-                st.error(resp.warning_message or "Answer blocked due to high hallucination risk.")
-                st.markdown("**🛡️ Safe Egress: Retrieved Evidence & Source Provenance**")
-                if resp.retrieved_chunks:
-                        clean_chunk = re.sub(r'^[#*>\-\s]+', '', chunk.get('text', '')).strip()
-                        st.info(f"**Evidence {i+1}** — {chunk.get('source_file')}, p.{chunk.get('page_num')} (similarity: {chunk.get('similarity_score', 0.0):.3f})\n\n{clean_chunk}")
-                else:
-                    st.write("No retrieved chunks available.")
-            else:
-                if resp.warning_message:
-                    st.warning(resp.warning_message)
-                
-                # Build HTML for sentences
-                html_out = ""
-                for v in res.verdicts:
-                    # Strip any leading markdown header hashes (#), stars, or bullets that enlarge text
-                    clean_text = re.sub(r'^[#*>\-\s]+', '', v.sentence).strip()
-                    if v.classification == "SUPPORTED":
-                        html_out += f'<span class="sent-supported">{clean_text} [{v.source_file}, p.{v.source_page}]</span> '
-                    elif v.classification == "WEAKLY_SUPPORTED":
-                        html_out += f'<span class="sent-weak">⚠ {clean_text}</span> '
-                    else:
-                        html_out += f'<span class="sent-hallucinated">{clean_text}</span> '
-                
-                st.markdown(f'<div style="font-size: 1rem; line-height: 1.8; color: #f1f5f9; margin-bottom: 8px;">{html_out}</div>', unsafe_allow_html=True)
-                
-                if resp.cited_sources:
-                    st.caption(f"**Sources:** {', '.join(resp.cited_sources)}")
-
-            # 3. Render XAI Expander
-            with st.expander("🔬 View Explainability & Detection Logs"):
-                try:
-                    render_explainability_panel(res, key_prefix=str(msg_idx))
-                except Exception as ex:
-                    st.warning(f"Could not render detection logs: {ex}")
-                
+            render_answer(msg["result"], idx)
         else:
-            # Standard text message (user or initial greeting)
             st.markdown(msg["content"])
 
+if len(st.session_state.messages) <= 1:
+    st.markdown("**Try an example:**")
+    cols = st.columns(len(EXAMPLES))
+    for col, (label, question) in zip(cols, EXAMPLES):
+        if col.button(f"{label}: {question}", key=f"example_{question}", width="stretch"):
+            st.session_state.pending_prompt = question
+            st.rerun()
 
-# Handle new user input
-if prompt := st.chat_input("Ask a question about the documents..."):
-    # Display user prompt immediately
-    st.session_state.messages.append({"role": "user", "content": prompt})
+prompt = st.chat_input("Ask a question about the documents...")
+if st.session_state.pending_prompt and not prompt:
+    prompt = st.session_state.pending_prompt
+st.session_state.pending_prompt = None
+
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt, "result": None})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Process AI response
+    pipe.hall_engine.w_nli, pipe.hall_engine.w_bert, pipe.hall_engine.w_cos = w_nli, w_bert, w_cos
+    pipe.hall_engine.high_thr = pipe.controller.high_thr = high_threshold
+    pipe.hall_engine.medium_thr = pipe.controller.medium_thr = medium_threshold
+
     with st.chat_message("assistant"):
-        with st.spinner(f"Generating answer with {model_name_choice} & verifying claims (<30s)..."):
-            pipe = get_pipeline()
-            st.session_state.pipeline = pipe
-            st.session_state.models_loaded = True
-            
-            # Update models, top_k and thresholds dynamically
-            pipe.generator.model_name = model_name_choice
-            pipe.top_k = top_k_val
-            pipe.hall_engine.w_nli = w_nli
-            pipe.hall_engine.w_bert = w_bert
-            pipe.hall_engine.w_cos = w_cos
-            pipe.hall_engine.high_thr = high_threshold
-            pipe.hall_engine.medium_thr = medium_threshold
-            pipe.controller.high_thr = high_threshold
-            pipe.controller.medium_thr = medium_threshold
-
-            # Run query
+        with st.status("Working on it...", expanded=True) as status:
             start = time.time()
-            result = pipe.query(prompt, top_k=top_k_val)
+            result = pipe.query(prompt, progress=lambda label: status.write(f"• {label}"))
             elapsed = time.time() - start
+            status.update(label=f"Done in {elapsed:.1f}s", state="complete", expanded=False)
 
-            if result.error:
-                st.error(f"Error: {result.error}")
-                st.session_state.messages.append({"role": "assistant", "content": f"Error: {result.error}", "result": None})
-            else:
-                # Store query latency in summary
-                result.summary["latency"] = elapsed
-                # Add to history and rerun to render properly via the loop above
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": "", # Content is generated dynamically from the result
-                    "result": result
-                })
-                st.rerun()
+    if result.error:
+        st.session_state.messages.append(
+            {"role": "assistant", "content": f"Error: {result.error}", "result": None})
+    else:
+        result.summary["latency"] = elapsed
+        st.session_state.messages.append({"role": "assistant", "content": "", "result": result})
+    persist_current_chat()
+    st.rerun()

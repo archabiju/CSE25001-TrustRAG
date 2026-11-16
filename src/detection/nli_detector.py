@@ -48,8 +48,16 @@ class NLIDetector:
     ):
         print(f"[INFO] Loading NLI model: {model_name}")
         try:
+            import torch
             from sentence_transformers import CrossEncoder
-            self.model = CrossEncoder(model_name)
+            if torch.backends.mps.is_available():
+                device = "mps"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+            self.model = CrossEncoder(model_name, device=device)
+            print(f"[INFO] NLI device: {device}")
             self.model_name = model_name
             self.label_to_idx = self._resolve_label_mapping(
                 self.model.model.config.id2label
@@ -118,61 +126,10 @@ class NLIDetector:
                 apply_softmax=True,
             )[0]  # shape: (3,)
 
-            contradict_prob = float(logits[self.label_to_idx["CONTRADICTION"]])
-            neutral_prob    = float(logits[self.label_to_idx["NEUTRAL"]])
-            entail_prob     = float(logits[self.label_to_idx["ENTAILMENT"]])
-
-            label_idx = int(np.argmax(logits))
-            label = self.labels_by_idx[label_idx]
-
-            return {
-                "entail_prob":      round(entail_prob, 4),
-                "neutral_prob":     round(neutral_prob, 4),
-                "contradict_prob":  round(contradict_prob, 4),
-                "label":            label,
-                "nli_support_score": round(entail_prob, 4),
-            }
+            return self._scores_from_logits(logits)
         except Exception as e:
             print(f"[WARN] NLI scoring failed: {e}. Using heuristic.")
             return self._heuristic_score(premise, hypothesis)
-
-    def score_pairs(
-        self,
-        pairs: List[Tuple[str, str]],
-        batch_size: int = 16,
-    ) -> List[Dict[str, Any]]:
-        """
-        Score multiple (premise, hypothesis) pairs in a fast batch.
-        """
-        if not pairs:
-            return []
-        if self.model is None:
-            return [self._heuristic_score(p, h) for p, h in pairs]
-
-        try:
-            logits = self.model.predict(
-                pairs,
-                batch_size=batch_size,
-                apply_softmax=True,
-                show_progress_bar=False,
-            )
-            results = []
-            for item in logits:
-                contradict_prob = float(item[CONTRADICTION_IDX])
-                neutral_prob    = float(item[NEUTRAL_IDX])
-                entail_prob     = float(item[ENTAILMENT_IDX])
-                label_idx = int(np.argmax(item))
-                results.append({
-                    "entail_prob":       round(entail_prob, 4),
-                    "neutral_prob":      round(neutral_prob, 4),
-                    "contradict_prob":   round(contradict_prob, 4),
-                    "label":             NLI_LABELS[label_idx],
-                    "nli_support_score": round(entail_prob, 4),
-                })
-            return results
-        except Exception as e:
-            print(f"[WARN] Batch NLI scoring failed: {e}. Using heuristic.")
-            return [self._heuristic_score(p, h) for p, h in pairs]
 
     def score_sentences(
         self,
@@ -183,22 +140,29 @@ class NLIDetector:
         top_n: int = 4,
     ) -> List[Dict[str, Any]]:
         """
-        Score multiple sentences against their best-matching chunks using fast batching.
+        Score multiple sentences against their best-matching chunks.
 
         If `evidence` (an EvidenceWindows) is given, each sentence is instead verified
         against its `top_n` most similar short evidence windows and the window with the
         highest entailment probability is used (sentence-level NLI, SummaC-style).
-        """
-        all_pairs = []
-        pair_to_sent = []
-        valid_indices = set()
 
+        For each sentence, we score it against the chunk it was attributed
+        to (from the XAI layer), or against ALL retrieved chunks and take
+        the max entailment score.
+
+        Args:
+            sentences: List of generated sentences.
+            chunks: List of retrieved chunk dicts.
+            attributions: Optional attribution output from xai_layer. If
+                          provided, uses each sentence's best-attributed chunk.
+
+        Returns:
+            List of NLI result dicts, one per sentence, with added "sentence" field.
+        """
+        jobs = []
         for i, sentence in enumerate(sentences):
             if not sentence.strip():
                 continue
-
-            valid_indices.add(i)
-
             if evidence is not None and evidence.windows:
                 premises = evidence.top(sentence, top_n)
             elif attributions and i < len(attributions):
@@ -207,35 +171,68 @@ class NLIDetector:
                 premises = [chunks[0]["text"]]
             else:
                 premises = []
+            for premise in premises:
+                jobs.append((i, sentence, premise))
 
-            for p in premises:
-                all_pairs.append((p, sentence))
-                pair_to_sent.append((i, sentence))
+        if not jobs or self.model is None:
+            return [
+                self._empty_or_heuristic(i, sentence, premise)
+                for i, sentence, premise in jobs
+            ] if self.model is None else []
 
-        if not all_pairs:
-            # Fallback for empty pairs
-            return [{
-                "sentence": sentence,
-                "sentence_idx": i,
-                "entail_prob": 0.0,
-                "neutral_prob": 1.0,
-                "contradict_prob": 0.0,
-                "label": "NEUTRAL",
-                "nli_support_score": 0.0,
-            } for i, sentence in enumerate(sentences) if sentence.strip()]
+        try:
+            logits = self.model.predict(
+                [(premise, sentence) for _, sentence, premise in jobs],
+                apply_softmax=True,
+                show_progress_bar=False,
+            )
+        except Exception as e:
+            print(f"[WARN] Batched NLI scoring failed: {e}. Scoring pairs one by one.")
+            results = []
+            best_by_sentence = {}
+            for i, sentence, premise in jobs:
+                scored = self.score_pair(premise, sentence)
+                previous = best_by_sentence.get(i)
+                if previous is None or scored["entail_prob"] > previous["entail_prob"]:
+                    scored["sentence"] = sentence
+                    scored["sentence_idx"] = i
+                    best_by_sentence[i] = scored
+            return [best_by_sentence[i] for i in sorted(best_by_sentence)]
 
-        scored_pairs = self.score_pairs(all_pairs)
+        best_by_sentence = {}
+        for row, (i, sentence, _premise) in zip(logits, jobs):
+            scored = self._scores_from_logits(row)
+            previous = best_by_sentence.get(i)
+            if previous is None or scored["entail_prob"] > previous["entail_prob"]:
+                scored["sentence"] = sentence
+                scored["sentence_idx"] = i
+                best_by_sentence[i] = scored
+        return [best_by_sentence[i] for i in sorted(best_by_sentence)]
 
-        # Aggregate: pick best entailment per sentence
-        best_per_sentence = {}
-        for (i, sentence), res in zip(pair_to_sent, scored_pairs):
-            if i not in best_per_sentence or res["entail_prob"] > best_per_sentence[i]["entail_prob"]:
-                res_copy = dict(res)
-                res_copy["sentence"] = sentence
-                res_copy["sentence_idx"] = i
-                best_per_sentence[i] = res_copy
+    def _scores_from_logits(self, logits) -> Dict[str, Any]:
+        contradict_prob = float(logits[self.label_to_idx["CONTRADICTION"]])
+        neutral_prob = float(logits[self.label_to_idx["NEUTRAL"]])
+        entail_prob = float(logits[self.label_to_idx["ENTAILMENT"]])
+        label_idx = int(np.argmax(logits))
+        return {
+            "entail_prob": round(entail_prob, 4),
+            "neutral_prob": round(neutral_prob, 4),
+            "contradict_prob": round(contradict_prob, 4),
+            "label": self.labels_by_idx[label_idx],
+            "nli_support_score": round(entail_prob, 4),
+        }
 
-        return [best_per_sentence[i] for i in sorted(best_per_sentence.keys())]
+    def _empty_or_heuristic(self, sentence_idx: int, sentence: str, premise: str) -> Dict[str, Any]:
+        scored = self._heuristic_score(premise, sentence) if premise else {
+            "entail_prob": 0.0,
+            "neutral_prob": 1.0,
+            "contradict_prob": 0.0,
+            "label": "NEUTRAL",
+            "nli_support_score": 0.0,
+        }
+        scored["sentence"] = sentence
+        scored["sentence_idx"] = sentence_idx
+        return scored
 
     def _heuristic_score(
         self,

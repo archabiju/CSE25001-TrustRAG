@@ -1,0 +1,17 @@
+Python               : 3.15.2
+Platform             : macOS-27.2.1-arm64-arm-64bit-Mach-O
+torch                : 2.15.0
+transformers         : 5.22.2
+sentence-transformers: 6.2.0
+faiss                : 1.15.1
+Generator backend    : tinyllama
+Generator model      : TinyLlama/TinyLlama-1.1B-Chat-v1.0
+Generator max tokens : 256 | temperature: 0.0
+Embedding model      : sentence-transformers/all-MiniLM-L6-v2
+Top-K retrieval      : 8
+NLI model            : cross-encoder/nli-deberta-v3-small
+BERTScore model      : distilbert-base-uncased
+Evidence windows     : True | size: 2 | top_n: 4
+Fusion weights       : 0.45 0.35 0.2
+Thresholds           : 0.75 0.5
+Max block ratio      : 0.5
