@@ -191,7 +191,7 @@ streamlit run ui/app.py
    turn on **Show explainability details** for the per-claim log, charts, and word saliency.
 4. After adding documents to `data/corpus/`, click **🔨 Rebuild document index** in the sidebar.
 
-Chat history is saved to `data/chat_history.pkl` and restored on restart.
+A new window starts on a blank chat. Past chats are listed in the sidebar and saved in `data/chats.pkl`.
 
 ---
 

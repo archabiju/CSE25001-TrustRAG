@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="TrustRAG: an offline retrieval-augmented generation system that checks every sentence of its answer against retrieved evidence. M.Tech project, Amrita School of Computing.">
+<title>TrustRAG Project Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout concept: a left-aligned technical report whose figures are live. Every number on the interactive panels comes from the saved evaluation files. */
+:root{
+  --bg:#F6F8FA; --surface:#FFFFFF; --fg:#132130; --muted:#53657A; --line:#D9E0E8;
+  --accent:#0B5FA5; --accent-ink:#FFFFFF; --accent-soft:#E3EFFA;
+  --ok:#1B7F4B; --ok-soft:#E1F3E8; --warn:#9A5B00; --warn-soft:#FBEFD9; --bad:#B3261E; --bad-soft:#FBE4E2;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0C141C; --surface:#131E29; --fg:#E6EDF4; --muted:#93A5B8; --line:#26364A;
+  --accent:#6DB3F2; --accent-ink:#08121C; --accent-soft:#15283B;
+  --ok:#5FD08F; --ok-soft:#12301F; --warn:#F0B35A; --warn-soft:#352610; --bad:#FF8F86; --bad-soft:#3A1816; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C141C; --surface:#131E29; --fg:#E6EDF4; --muted:#93A5B8; --line:#26364A;
+  --accent:#6DB3F2; --accent-ink:#08121C; --accent-soft:#15283B;
+  --ok:#5FD08F; --ok-soft:#12301F; --warn:#F0B35A; --warn-soft:#352610; --bad:#FF8F86; --bad-soft:#3A1816; color-scheme:dark}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:68px}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+a{color:var(--accent)}
+.wrap{max-width:1080px;margin:0 auto}
+h1,h2,h3{font-weight:600;line-height:1.2;text-wrap:balance;margin:0}
+h2{font-size:1.75rem;letter-spacing:-.01em}
+h3{font-size:1.05rem}
+p{margin:0 0 1em;max-width:68ch}
+.eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem}
+code,.mono{font-family:var(--mono);font-size:.9em}
+a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,video:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* top bar */
+header.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar-in{display:flex;align-items:center;gap:16px;padding-block:10px}
+.brand{font-weight:600;text-decoration:none;color:var(--fg);white-space:nowrap}
+.brand span{color:var(--accent)}
+nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+nav a{padding:6px 10px;border-radius:6px;text-decoration:none;color:var(--muted);font-size:.9rem;white-space:nowrap}
+nav a:hover{background:var(--accent-soft);color:var(--fg)}
+nav a[aria-current="true"]{background:var(--accent-soft);color:var(--fg);font-weight:500}
+.theme{font:inherit;font-size:.82rem;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+
+section{padding-block:56px;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+.sec-head{margin-bottom:26px}
+.sec-head p{color:var(--muted);margin-top:.6rem}
+
+/* hero */
+.hero{display:grid;grid-template-columns:1.05fr 1fr;gap:40px;align-items:start;padding-block:52px 48px;border-bottom:1px solid var(--line)}
+.hero h1{font-size:clamp(2.4rem,6vw,3.6rem);letter-spacing:-.025em}
+.hero .lede{font-size:1.15rem;color:var(--muted);margin:16px 0 24px}
+.btns{display:flex;flex-wrap:wrap;gap:10px}
+.btn{display:inline-block;padding:10px 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);text-decoration:none;font-weight:500;font-size:.95rem;cursor:pointer;font-family:inherit}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.meta{margin-top:22px;font-size:.88rem;color:var(--muted)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}
+.q{font-family:var(--mono);font-size:.82rem;color:var(--muted);margin-bottom:12px}
+.claim{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:10px 0;border-top:1px solid var(--line);align-items:start}
+.claim:first-of-type{border-top:0}
+.tag{display:inline-block;font-family:var(--mono);font-size:.7rem;font-weight:500;padding:3px 8px;border-radius:5px;white-space:nowrap}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.bad{background:var(--bad-soft);color:var(--bad)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.neutral{background:var(--accent-soft);color:var(--accent)}
+.claim p{margin:0;font-size:.93rem}
+.claim .tag{margin-top:2px}
+.outcomes{display:grid;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.outcome{display:grid;grid-template-columns:minmax(0,1fr) 3.2rem;gap:4px 12px;align-items:center;font-size:.85rem}
+.outcome .lbl{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.track{grid-column:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.fill{height:100%;border-radius:4px}
+.outcome .pct{grid-row:1/3;grid-column:2;font-family:var(--mono);text-align:right}
+.note{font-size:.82rem;color:var(--muted);margin-top:14px;margin-bottom:0}
+
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.item{border-top:2px solid var(--line);padding-top:12px;min-width:0}
+.item h3{margin-bottom:6px}
+.item p{margin:0;color:var(--muted);font-size:.95rem}
+
+/* tabs / segmented */
+.seg{display:inline-flex;flex-wrap:wrap;gap:4px;padding:4px;background:var(--accent-soft);border-radius:9px}
+.seg button{font:inherit;font-size:.86rem;border:0;background:transparent;color:var(--muted);padding:6px 12px;border-radius:6px;cursor:pointer}
+.seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:var(--surface);color:var(--fg);font-weight:500;box-shadow:0 0 0 1px var(--line)}
+.row{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;margin-bottom:16px}
+.label{font-family:var(--mono);font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+
+/* pipeline explorer */
+.stages{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:16px}
+.stages button{font:inherit;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:10px;padding:10px 12px;cursor:pointer;min-width:0}
+.stages button .n{display:block;font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+.stages button b{font-weight:500;font-size:.92rem}
+.stages button[aria-selected="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.stage-panel{display:grid;grid-template-columns:1.3fr 1fr;gap:24px}
+.stage-panel h3{margin-bottom:8px;font-size:1.2rem}
+.io{display:grid;gap:10px;align-content:start}
+.io div{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg);font-size:.88rem;min-width:0;overflow-wrap:anywhere}
+.io .label{display:block;margin-bottom:2px}
+.files{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.files a{font-family:var(--mono);font-size:.78rem;text-decoration:none;border:1px solid var(--line);border-radius:5px;padding:2px 8px;color:var(--accent)}
+.formula{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto}
+.formula code{display:block;white-space:nowrap}
+.states{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+
+/* claim lab */
+.lab{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:20px;align-items:start}
+.ctrl{display:grid;gap:12px}
+.slider{display:grid;gap:2px}
+.slider .top{display:flex;justify-content:space-between;font-size:.88rem;gap:8px}
+.slider .top output{font-family:var(--mono);font-size:.85rem;color:var(--accent)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg)}
+.stat .v{font-family:var(--mono);font-size:1.15rem;font-variant-numeric:tabular-nums}
+.stat .k{font-size:.74rem;color:var(--muted)}
+.conf{display:grid;grid-template-columns:auto repeat(2,minmax(0,1fr));gap:4px;margin-top:14px;font-size:.82rem;text-align:center;max-width:320px}
+.conf div{padding:6px 4px;border-radius:5px;background:var(--bg);border:1px solid var(--line);font-family:var(--mono)}
+.conf .h{background:transparent;border:0;color:var(--muted);font-family:var(--sans);font-size:.75rem}
+.conf .good{background:var(--ok-soft);color:var(--ok)}
+.conf .badc{background:var(--bad-soft);color:var(--bad)}
+select{font:inherit;font-size:.92rem;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:8px 10px;max-width:100%;min-width:0}
+.crow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:12px 0;border-top:1px solid var(--line);align-items:start}
+.crow:first-of-type{border-top:0}
+.crow input[type=checkbox]{margin-top:5px;width:16px;height:16px;accent-color:var(--accent)}
+.crow .txt{margin:0;font-size:.95rem}
+.crow .sig{grid-column:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:8px 14px;align-items:center;font-size:.76rem;color:var(--muted)}
+.crow .sig .s{min-width:0}
+.crow .sig .s span{display:flex;justify-content:space-between;font-family:var(--mono)}
+.mini{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:2px}
+.mini i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.crow .res{grid-column:2;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.82rem;color:var(--muted)}
+.crow.off .txt,.crow.off .sig{opacity:.45}
+.decision{margin-top:16px;border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--bg)}
+.decision .big{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px}
+.decision p{margin:0;font-size:.9rem;color:var(--muted)}
+
+/* tables and bars */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:.74rem;font-family:var(--mono);font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar-cell{width:30%;min-width:120px}
+.hbar{height:9px;background:var(--line);border-radius:5px;overflow:hidden}
+.hbar i{display:block;height:100%;background:var(--accent);border-radius:5px;transition:width .35s}
+tr.nd td{background:var(--ok-soft)}
+tr.nd .hbar i{background:var(--ok)}
+.callout{margin-top:18px;border-left:3px solid var(--accent);padding:4px 0 4px 16px}
+.callout p{margin:0 0 .5em;color:var(--muted);font-size:.95rem}
+.scale{display:grid;gap:8px;margin-top:10px}
+.scale div{display:grid;grid-template-columns:7rem minmax(0,1fr) 6rem;gap:10px;align-items:center;font-size:.85rem}
+.scale .tr{height:14px;background:var(--line);border-radius:3px;position:relative}
+.scale .tr i{display:block;height:100%;background:var(--accent);border-radius:3px;min-width:2px}
+.scale span.v{font-family:var(--mono);text-align:right}
+.caveats{margin:20px 0 0;padding:0;list-style:none;display:grid;gap:10px}
+.caveats li{padding-left:16px;border-left:3px solid var(--warn);font-size:.95rem;color:var(--muted)}
+
+/* video */
+.vwrap{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:24px;align-items:start}
+video{width:100%;max-width:100%;border-radius:12px;border:1px solid var(--line);background:#000;display:block}
+.chap{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.chap button{width:100%;font:inherit;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:9px 12px;cursor:pointer;display:grid;grid-template-columns:3rem minmax(0,1fr);gap:10px;font-size:.9rem}
+.chap button .t{font-family:var(--mono);color:var(--accent);font-size:.82rem}
+.chap button[aria-current="true"]{border-color:var(--accent);background:var(--accent-soft)}
+
+/* papers */
+.paper h3{margin-bottom:4px}
+.paper .where{font-family:var(--mono);font-size:.78rem;color:var(--muted);margin-bottom:10px}
+.paper ul{margin:8px 0 0;padding-left:1.1em;color:var(--muted);font-size:.93rem}
+.paper li{margin-bottom:4px}
+.pill{display:inline-block;font-family:var(--mono);font-size:.72rem;border:1px solid var(--line);border-radius:999px;padding:2px 9px;margin-right:6px;color:var(--muted)}
+
+/* progress */
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:9rem minmax(0,1fr);gap:20px;padding:14px 0;border-top:1px solid var(--line)}
+.tl li:first-child{border-top:0}
+.tl time{font-family:var(--mono);font-size:.85rem;color:var(--accent)}
+.tl p{margin:0}
+details{border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:10px}
+summary{cursor:pointer;padding:12px 16px;font-weight:500}
+details .in{padding:0 16px 14px;color:var(--muted);font-size:.95rem}
+details ul,details ol{margin:0;padding-left:1.2em}
+details li{margin-bottom:6px}
+
+.docs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 24px}
+.docs li{border-bottom:1px solid var(--line);padding:9px 0}
+.docs a{text-decoration:none;font-weight:500}
+.docs a:hover{text-decoration:underline}
+.docs span{display:block;font-size:.85rem;color:var(--muted)}
+.cmd{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px}
+.cmd code{overflow-x:auto;white-space:nowrap;min-width:0}
+.cmd button{font:inherit;font-size:.82rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
+.person h3{margin-bottom:2px}
+.person .role{color:var(--muted);font-size:.92rem;margin:0}
+footer{padding-block:28px 40px;color:var(--muted);font-size:.88rem}
+footer a{color:var(--muted)}
+
+@media (max-width:900px){
+  .hero,.stage-panel,.lab,.vwrap{grid-template-columns:minmax(0,1fr)}
+  .stages{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:600px){
+  .g2,.g3,.docs{grid-template-columns:minmax(0,1fr)}
+  .stages{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tl li{grid-template-columns:minmax(0,1fr);gap:2px}
+  .crow .sig{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .scale div{grid-template-columns:5.5rem minmax(0,1fr) 5rem}
+  section{padding-block:40px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.hbar i{transition:none}}
+</style>
+<style>body{margin:0}img,video{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+
+<noscript><p style="padding:12px 0;color:var(--bad)">This page needs JavaScript for its interactive panels.</p></noscript>
+<div id="jsErr" hidden style="background:var(--bad-soft);color:var(--bad);padding:8px 12px;font-family:var(--mono);font-size:.82rem;border-radius:6px;margin:8px 0"></div>
+<header class="bar">
+  <div class="wrap bar-in">
+    <a class="brand" href="#top">Trust<span>RAG</span></a>
+    <nav aria-label="Sections" id="nav">
+      <a href="#problem">Problem</a>
+      <a href="#method">Method</a>
+      <a href="#lab">Try it</a>
+      <a href="#results">Results</a>
+      <a href="#retrieval">Retrieval</a>
+      <a href="#demo">Demo</a>
+      <a href="#papers">Papers</a>
+      <a href="#progress">Progress</a>
+      <a href="#docs">Docs</a>
+      <a href="#team">Team</a>
+    </nav>
+    <button class="theme" id="themeBtn" type="button" aria-label="Change colour theme">Theme: auto</button>
+  </div>
+</header>
+
+<main class="wrap" id="top">
+
+<div class="hero">
+  <div>
+    <div class="eyebrow">M.Tech project &middot; Amrita School of Computing</div>
+    <h1>TrustRAG</h1>
+    <p class="lede">An offline question-answering system that checks every sentence of its own answer against the documents it retrieved, and blocks what the evidence does not support.</p>
+    <div class="btns">
+      <a class="btn primary" href="#lab">Try the verifier</a>
+      <a class="btn" href="#demo">Watch the demo</a>
+      <a class="btn" href="https://github.com/archabiju/hallucination-control-rag" target="_blank" rel="noopener">GitHub repository</a>
+      <a class="btn" href="https://github.com/archabiju/trustrag-claims-dataset" target="_blank" rel="noopener">Claims dataset</a>
+    </div>
+    <p class="meta">Offline, open-weight models only: Sentence-BERT and FAISS for retrieval, TinyLlama for generation, and a DeBERTa NLI model with BERTScore and cosine similarity for verification. Thesis: TrustRAG, a trustworthy offline retrieval-augmented generation framework with explainable multi-signal hallucination detection, and TrustRAG-Opt, a controlled comparison of retrieval indexes.</p>
+  </div>
+
+  <div class="card" aria-label="Example of sentence-level verification">
+    <div class="q">Q: What is Retrieval-Augmented Generation?</div>
+    <div class="claim"><span class="tag ok">SUPPORTED</span><p>RAG combines a retriever that searches an external knowledge source with a generator that produces text.</p></div>
+    <div class="claim"><span class="tag ok">SUPPORTED</span><p>A RAG system looks up relevant passages at query time and gives them to the language model as context.</p></div>
+    <div class="claim"><span class="tag bad">HALLUCINATED</span><p>RAG completely eliminates hallucination in language models.</p></div>
+    <div class="claim"><span class="tag bad">HALLUCINATED</span><p>RAG requires retraining the language model every time the knowledge base is updated.</p></div>
+    <div class="outcomes">
+      <div class="outcome"><div class="lbl"><span>Grounded claims only</span><span class="mono" style="color:var(--ok)">Answer with citations</span></div><div class="pct">89%</div><div class="track"><div class="fill" style="width:89%;background:var(--ok)"></div></div></div>
+      <div class="outcome"><div class="lbl"><span>Grounded + fabricated</span><span class="mono" style="color:var(--warn)">Partial answer</span></div><div class="pct">64%</div><div class="track"><div class="fill" style="width:64%;background:var(--warn)"></div></div></div>
+      <div class="outcome"><div class="lbl"><span>Fabricated claims only</span><span class="mono" style="color:var(--bad)">Blocked</span></div><div class="pct">40%</div><div class="track"><div class="fill" style="width:40%;background:var(--bad)"></div></div></div>
+    </div>
+    <p class="note">Tags are the dataset labels. The bars are grounding scores from the project's demo run on 10 November 2026. <a href="#lab">Rebuild these answers yourself below.</a></p>
+  </div>
+</div>
+
+<section id="problem">
+  <div class="sec-head">
+    <div class="eyebrow">Problem and objectives</div>
+    <h2>Retrieval does not guarantee a faithful answer</h2>
+  </div>
+  <p>Retrieval-augmented generation hands a language model relevant documents before it answers. The model can still ignore or misread them and write sentences the documents never supported. Most detectors depend on external fact-checking, heavy classifiers or cloud APIs, and they rarely show which piece of evidence is supposed to back which statement.</p>
+  <p>Given a query, a set of chunks and a generated answer, TrustRAG decides for every sentence whether the retrieved evidence supports it, and then whether the whole response is fit to show. It does this with local models only, traces each decision to a specific chunk, and returns a calibrated score instead of a flat yes or no.</p>
+  <div class="grid g3" style="margin-top:24px">
+    <div class="item"><h3>Research gap</h3><p>Retrieval quality, factual-consistency checking and explainability are usually studied separately. Few systems give a sentence-level score tied to evidence that works fully offline.</p></div>
+    <div class="item"><h3>Second question</h3><p>Does the choice of retrieval index change what gets verified, and does it matter for response time once verification is the expensive part? That is TrustRAG-Opt.</p></div>
+    <div class="item"><h3>Three SDGs</h3><p>SDG 9 (offline infrastructure), SDG 16 (accountable AI that suppresses unsupported claims) and SDG 4 (answers that are safer to learn from).</p></div>
+  </div>
+  <h3 style="margin-top:32px;margin-bottom:12px">Objectives</h3>
+  <div class="grid g2">
+    <div class="item"><p><b>1.</b> Build an offline RAG framework for evidence-grounded responses.</p></div>
+    <div class="item"><p><b>2.</b> Implement semantic retrieval with Sentence-BERT and FAISS.</p></div>
+    <div class="item"><p><b>3.</b> Add sentence-level evidence attribution and a provenance score.</p></div>
+    <div class="item"><p><b>4.</b> Detect hallucination with NLI, BERTScore and cosine similarity.</p></div>
+    <div class="item"><p><b>5.</b> Fuse the signals into a Trust Score and a tri-state decision.</p></div>
+    <div class="item"><p><b>6.</b> Evaluate on a labelled benchmark and an external one, and report where it fails.</p></div>
+    <div class="item"><p><b>7.</b> Compare four retrieval back-ends under the fixed verifier, with repeated runs.</p></div>
+  </div>
+</section>
+
+<section id="method">
+  <div class="sec-head">
+    <div class="eyebrow">Methodology</div>
+    <h2>From question to controlled answer</h2>
+    <p>Select a stage to see what it does and where the code lives.</p>
+  </div>
+  <div class="stages" role="tablist" aria-label="Pipeline stages" id="stages"></div>
+  <div class="card stage-panel" id="stagePanel" role="tabpanel"></div>
+  <div class="formula">
+    <code>support_score = 0.45 &times; NLI + 0.35 &times; BERTScore + 0.20 &times; cosine</code>
+    <div class="states">
+      <span class="tag ok">&ge; 0.75 &middot; SUPPORTED</span>
+      <span class="tag warn">0.50 to 0.75 &middot; WEAKLY SUPPORTED</span>
+      <span class="tag bad">&lt; 0.50 &middot; HALLUCINATED</span>
+      <span class="tag neutral">Block the answer if the mean score is below 0.50 or more than half the sentences are Hallucinated</span>
+    </div>
+  </div>
+</section>
+
+<section id="lab">
+  <div class="sec-head">
+    <div class="eyebrow">Try it</div>
+    <h2>Re-weight the verifier on 109 real claims</h2>
+    <p>These are the saved scores from the corrected evaluation run: 37 questions and 109 hand-labelled claims. Change the weights and thresholds and the labels, metrics and decision update as they would in the pipeline. Untick a claim to see how the answer-level decision changes.</p>
+  </div>
+  <div class="lab">
+    <div class="card">
+      <div class="label" style="margin-bottom:8px">Presets</div>
+      <div class="seg" id="presets" style="margin-bottom:16px">
+        <button type="button" data-p="45,35,20">Thesis</button>
+        <button type="button" data-p="100,0,0">NLI only</button>
+        <button type="button" data-p="0,100,0">BERTScore</button>
+        <button type="button" data-p="0,0,100">Cosine</button>
+        <button type="button" data-p="34,33,33">Equal</button>
+      </div>
+      <div class="ctrl">
+        <label class="slider"><span class="top"><span>NLI entailment</span><output id="o_wn"></output></span><input type="range" id="wn" min="0" max="100" step="5"></label>
+        <label class="slider"><span class="top"><span>BERTScore</span><output id="o_wb"></output></span><input type="range" id="wb" min="0" max="100" step="5"></label>
+        <label class="slider"><span class="top"><span>Cosine similarity</span><output id="o_wc"></output></span><input type="range" id="wc" min="0" max="100" step="5"></label>
+        <label class="slider"><span class="top"><span>Supported at or above</span><output id="o_hi"></output></span><input type="range" id="hi" min="30" max="95" step="1"></label>
+        <label class="slider"><span class="top"><span>Hallucinated below</span><output id="o_med"></output></span><input type="range" id="med" min="10" max="90" step="1"></label>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="conf" id="conf"></div>
+      <p class="note" id="matchNote"></p>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label class="label" for="qsel">Question</label>
+        <select id="qsel"></select>
+        <div class="seg"><button type="button" id="prevQ">Previous</button><button type="button" id="nextQ">Next</button></div>
+      </div>
+      <div id="claims"></div>
+      <div class="decision" id="decision" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section id="results">
+  <div class="sec-head">
+    <div class="eyebrow">Results</div>
+    <h2>What the evidence supports, and what it does not</h2>
+    <p>Corrected results after an audit found that an earlier run read the neutral class as entailment. The detector now takes the label order from the model.</p>
+  </div>
+  <div class="row">
+    <span class="label">Benchmark</span>
+    <div class="seg" id="benchSeg">
+      <button type="button" data-b="proj" aria-pressed="true">Project set (109 claims)</button>
+      <button type="button" data-b="rag" aria-pressed="false">RAGTruth held-out test</button>
+    </div>
+    <span class="label" id="metricLbl">Metric</span>
+    <div class="seg" id="metricSeg"></div>
+  </div>
+  <div class="tbl"><table id="resTbl"></table></div>
+  <div class="callout" id="resNote"></div>
+  <ul class="caveats">
+    <li>The 109 claims were used to inspect the detector, so the project-set figures are development results. RAGTruth is the external estimate.</li>
+    <li>Fusion does not beat NLI alone on the project set. The case for three signals rests on the interpretability and tri-state control they enable, not on an accuracy gain.</li>
+    <li>With a larger NLI checkpoint and eight evidence windows, NLI alone reaches F1 0.871 and AUROC 0.948, and the fusion reaches F1 0.871 and AUROC 0.908, still on the same 109 claims.</li>
+    <li>On RAGTruth the system does not reach high precision, and the thesis does not claim it does.</li>
+  </ul>
+</section>
+
+<section id="retrieval">
+  <div class="sec-head">
+    <div class="eyebrow">TrustRAG-Opt</div>
+    <h2>Which retrieval index should sit in front of the verifier?</h2>
+    <p>Four back-ends were compared under the same fixed verifier: exact FlatIP, IVF-PQ, HNSW at four search depths, and a dense-plus-BM25 hybrid. Values are the mean of five runs on a 213-chunk index. Pick the quality measure and the cost to compare.</p>
+  </div>
+  <div class="row">
+    <span class="label">Quality</span>
+    <div class="seg" id="qualSeg">
+      <button type="button" data-q="agree" aria-pressed="true">Agreement with FlatIP</button>
+      <button type="button" data-q="recall" aria-pressed="false">Labelled Recall@5</button>
+    </div>
+    <span class="label">Show bars for</span>
+    <div class="seg" id="costSeg">
+      <button type="button" data-c="lat" aria-pressed="true">Mean latency</button>
+      <button type="button" data-c="p95" aria-pressed="false">95th percentile</button>
+      <button type="button" data-c="mb" aria-pressed="false">Footprint</button>
+    </div>
+  </div>
+  <div class="tbl"><table id="idxTbl"></table></div>
+  <p class="note" style="margin-top:10px">Green rows are non-dominated: no other index is at least as good on quality, latency and memory and strictly better on one. The set is computed in your browser from the table.</p>
+  <div class="callout">
+    <p><b>Where the time goes.</b> Index choice moves search time by thousandths of a millisecond. The NLI check that verifies each answer takes about 0.6 seconds.</p>
+    <div class="scale">
+      <div><span>Search (FlatIP)</span><span class="tr"><i style="width:0.01%"></i></span><span class="v">0.0054 ms</span></div>
+      <div><span>NLI verification</span><span class="tr"><i style="width:100%"></i></span><span class="v">605 ms</span></div>
+    </div>
+    <p style="margin-top:10px">On this collection, choosing an index is a quality and memory decision, not a way to cut end-to-end latency. Only HNSW with efSearch 16 is faster than exact search (1.15 times), and the size of the collection matters: at a few hundred vectors the usual speedups of approximate indexes do not appear.</p>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="sec-head">
+    <div class="eyebrow">Demonstration</div>
+    <h2>The dashboard in action</h2>
+    <p>A 3 minute recording of the Streamlit app running on the author's Mac with TinyLlama on the local GPU. Jump to a moment with the chapters.</p>
+  </div>
+  <div class="vwrap">
+    <video id="vid" controls preload="metadata" poster="poster.jpg" src="demo.mp4" playsinline>Your browser cannot play this video.</video>
+    <div>
+      <div class="label" style="margin-bottom:8px">Chapters</div>
+      <ul class="chap" id="chap"></ul>
+      <p class="note">In the first answer, one of five sentences is struck through and the answer is marked Partial with grounding 73%. The out-of-corpus question is blocked at 0% before any answer is generated, and the closest evidence is shown instead.</p>
+    </div>
+  </div>
+  <h3 style="margin-top:28px">Run it yourself</h3>
+  <div class="grid g2" style="margin-top:12px">
+    <div><div class="label">macOS and Linux</div><div class="cmd"><code>./run_demo.sh</code><button type="button" data-copy="./run_demo.sh">Copy</button></div></div>
+    <div><div class="label">Windows</div><div class="cmd"><code>run_demo.bat</code><button type="button" data-copy="run_demo.bat">Copy</button></div></div>
+  </div>
+  <p class="note">Create a virtual environment and run <code>pip install -r requirements.txt</code> first. Models download once, then everything works offline. The script records model versions, builds the index, runs sample queries and regenerates the metrics.</p>
+</section>
+
+<section id="papers">
+  <div class="sec-head">
+    <div class="eyebrow">Papers and thesis</div>
+    <h2>Written work</h2>
+  </div>
+  <div class="grid g3">
+    <div class="card paper">
+      <h3>TrustRAG</h3>
+      <div class="where">IEEE Access format &middot; manuscript draft</div>
+      <p style="font-size:.93rem;color:var(--muted)">A trustworthy offline RAG framework that combines retrieval, explainable evidence attribution and multi-signal hallucination detection in one validation pipeline.</p>
+      <ul>
+        <li>Offline RAG with Sentence-BERT and a local FAISS index.</li>
+        <li>Multi-signal Trust Score from NLI, BERTScore and cosine similarity.</li>
+        <li>Intrinsic explainability: provenance tracking and evidence attribution.</li>
+        <li>Tri-state decision system at sentence and response level.</li>
+      </ul>
+      <p style="margin-top:12px"><span class="pill">17 pages</span><span class="pill">4 figures</span><span class="pill">Turnitin 8%</span></p>
+      <p style="margin:0"><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/my_manuscripts/Archa-IEEE-Journal.pdf" target="_blank" rel="noopener">Read the PDF</a></p>
+    </div>
+    <div class="card paper">
+      <h3>TrustRAG-Opt</h3>
+      <div class="where">ICMLDE &middot; accepted &middot; Procedia Computer Science</div>
+      <p style="font-size:.93rem;color:var(--muted)">A retrieval optimization layer that compares FlatIP, IVF-PQ, HNSW and hybrid retrieval within the explainable pipeline.</p>
+      <ul>
+        <li>A configurable retrieval layer inside the same pipeline.</li>
+        <li>A comparison on recall, latency and memory.</li>
+        <li>Analysis of the effect on attribution and verification.</li>
+        <li>Deployment-oriented guidance, with a point-by-point reviewer response.</li>
+      </ul>
+      <p style="margin-top:12px"><span class="pill">10 pages</span><span class="pill">Turnitin 7%</span></p>
+    </div>
+    <div class="card paper">
+      <h3>M.Tech thesis</h3>
+      <div class="where">Phase I &middot; five chapters</div>
+      <p style="font-size:.93rem;color:var(--muted)">Introduction, literature survey, proposed work, results and inferences, and conclusion with a Phase II plan.</p>
+      <ul>
+        <li>Results are stated plainly, including figures that did not hold up and were withdrawn.</li>
+        <li>Detection: NLI alone is the strongest single signal on the project set.</li>
+        <li>Retrieval: index choice is a quality and memory decision on this collection.</li>
+        <li>Claims are limited to the architecture and a reproducible evaluation.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="note" style="margin-top:18px;max-width:80ch">The manuscripts describe a larger target study. The numbers on this site are the values measured by the code in the repository, as the thesis reports them.</p>
+</section>
+
+<section id="progress">
+  <div class="sec-head">
+    <div class="eyebrow">Project progress</div>
+    <h2>Timeline and what comes next</h2>
+  </div>
+  <ol class="tl">
+    <li><time>29 Aug 2026</time><p><b>Panel Review 1.</b> Problem, literature review, architecture, and first retrieval pipeline with FAISS.</p></li>
+    <li><time>27 Sep 2026</time><p><b>Repository created.</b> First commit of the TrustRAG pipeline.</p></li>
+    <li><time>5 Oct 2026</time><p><b>Verification and evaluation.</b> Evidence-window checking, the 37-question and 109-claim benchmark, and a real Review 2 evaluation.</p></li>
+    <li><time>13 Oct 2026</time><p><b>Reviewer response.</b> Five-run variability measurements, the corrected NLI scoring and a held-out RAGTruth evaluation.</p></li>
+    <li><time>Oct 2026</time><p><b>Papers.</b> TrustRAG-Opt accepted at ICMLDE. A full IEEE Access manuscript is in draft.</p></li>
+    <li><time>10 Nov 2026</time><p><b>Release work.</b> Demo launchers for macOS and Windows, an install guide, and the claims dataset published as v1.0.0.</p></li>
+  </ol>
+  <div style="margin-top:24px">
+    <details>
+      <summary>Limitations stated in the thesis</summary>
+      <div class="in"><ul>
+        <li><b>Scale.</b> One 213-chunk collection and one embedding model. Orderings at a few hundred vectors do not establish orderings at thousands or millions.</li>
+        <li><b>Labels.</b> One annotator wrote and labelled the 109 claims. There is no agreement statistic.</li>
+        <li><b>Development set.</b> The project set was used to inspect the detector. RAGTruth is the external estimate.</li>
+        <li><b>Generation.</b> Generation was not run during the repeated index measurements.</li>
+        <li><b>Baseline.</b> A full conventional-RAG run has not been executed. A narrower comparison against a pass-through that accepts every claim is in the results above.</li>
+        <li><b>No superiority claim.</b> Cited systems were not re-run on these splits.</li>
+      </ul></div>
+    </details>
+    <details>
+      <summary>Phase II plan</summary>
+      <div class="in"><ol>
+        <li><b>Calibrated verifier.</b> Fine-tune a faithfulness classifier on the RAGTruth training portion, freeze it, then evaluate the test split once.</li>
+        <li><b>Conventional-RAG baseline.</b> One controlled run on the same 37 questions with the verification layer on and off, reported as an end-to-end hallucination rate.</li>
+        <li><b>Scale.</b> Grow the corpus in stages with the same index hyperparameters, repeat the timing protocol, and add a second embedding model.</li>
+        <li><b>Annotation.</b> A second annotator and an agreement score.</li>
+        <li><b>Adaptive control.</b> Per-domain weights and thresholds, multi-hop evidence, multilingual retrieval, and a faster cross-encoder.</li>
+      </ol></div>
+    </details>
+    <details>
+      <summary>Organizational customization</summary>
+      <div class="in">An organization drops its approved PDF, DOCX, TXT and Markdown files into the corpus folder and rebuilds the index. Answers are then drawn from and checked against that index. Retrieval can still miss evidence and sources can be wrong, so the organization's own questions should be labelled and the evaluation repeated whenever the corpus changes.</div>
+    </details>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="sec-head">
+    <div class="eyebrow">Documentation</div>
+    <h2>Read the code and the write-ups</h2>
+    <p>Each module has its own short document in the repository.</p>
+  </div>
+  <ul class="docs">
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/README.md" target="_blank" rel="noopener">README</a><span>Install, run and reproduce</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/docs/DEMO.md" target="_blank" rel="noopener">Demo guide</a><span>Commands and video outline</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/docs/00_PROJECT_OVERVIEW.md" target="_blank" rel="noopener">Project overview</a><span>Scope and design</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/docs/03_EMBEDDING_AND_FAISS.md" target="_blank" rel="noopener">Embeddings and FAISS</a><span>Retrieval layer</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/docs/04_XAI_EXPLAINABILITY_LAYER.md" target="_blank" rel="noopener">Explainability layer</a><span>Attribution and provenance</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/docs/06_HALLUCINATION_DETECTION.md" target="_blank" rel="noopener">Hallucination detection</a><span>NLI, BERTScore, cosine</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/docs/07_TRUST_SCORE_AND_CONTROLLER.md" target="_blank" rel="noopener">Trust Score and controller</a><span>Thresholds and decisions</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag/blob/master/docs/09_TOOLS_AND_VERSIONS.md" target="_blank" rel="noopener">Tools and versions</a><span>Libraries and why</span></li>
+    <li><a href="https://github.com/archabiju/trustrag-claims-dataset" target="_blank" rel="noopener">Claims dataset</a><span>37 questions, 109 labelled claims, CC BY 4.0</span></li>
+    <li><a href="https://github.com/archabiju/hallucination-control-rag" target="_blank" rel="noopener">Source repository</a><span>Code, evaluation scripts, saved results</span></li>
+  </ul>
+</section>
+
+<section id="team">
+  <div class="sec-head">
+    <div class="eyebrow">Team</div>
+    <h2>People</h2>
+  </div>
+  <div class="grid g2">
+    <div class="item person"><h3>Archa Biju</h3><p class="role">M.Tech Computer Science and Engineering. Design, implementation, evaluation and papers.</p></div>
+    <div class="item person"><h3>Dr. Ramya G R</h3><p class="role">Project guide, Department of Computer Science and Engineering.</p></div>
+  </div>
+  <p style="margin-top:24px;color:var(--muted)">Amrita School of Computing, Amrita Vishwa Vidyapeetham, Coimbatore.</p>
+</section>
+
+</main>
+
+<footer class="wrap">
+  Built for the M.Tech Phase I project. Code is for academic use. The claims dataset is released under CC BY 4.0.
+  &middot; <a href="https://github.com/archabiju/hallucination-control-rag" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script>
+window.addEventListener('error',function(e){var b=document.getElementById('jsErr');if(b){b.hidden=false;b.textContent='Script error: '+e.message+' (line '+e.lineno+')'}});
+</script>
+<script>
+(function(){
+var D={"q":["What is Retrieval-Augmented Generation?","Why is RAG not a guarantee against hallucination?","Can RAG run offline?","What does the typical RAG pipeline consist of?","What is a sentence embedding?","What is all-MiniLM-L6-v2?","Why are embeddings normalized before indexing?","How is semantic search better than keyword search?","What is FAISS?","What index types does FAISS provide?","Does a FAISS index update automatically when documents change?","What is hallucination in large language models?","What is the difference between intrinsic and extrinsic hallucination?","What causes hallucination?","How can hallucination be mitigated?","What is Natural Language Inference?","How is NLI used for hallucination detection?","What is a cross-encoder NLI model?","What is BERTScore?","How is BERTScore F1 computed?","Does BERTScore need training data or internet access?","What is XAI in a retrieval system?","What is word-level saliency?","What is provenance scoring?","What is the three-state decision scheme?","When is an entire response blocked?","Are the decision thresholds fixed?","What is chunking and why does it matter?","What is a common chunking configuration?","What alternatives to fixed-size chunking exist?","What do precision and recall measure for hallucination detection?","What does AUROC measure?","Which error is more costly in hallucination detection?","What is Ollama?","What are the trade-offs of local inference?","Why is prompt engineering not enough to prevent hallucination?","How can prompts reduce hallucination?"],"c":[[0,"RAG combines a retriever that searches an external knowledge source with a generator that produces text.",0,0.9967,0.8462,0.6662],[0,"A RAG system looks up relevant passages at query time and gives them to the language model as context.",0,0.9874,0.901,0.7102],[0,"RAG completely eliminates hallucination in language models.",1,0.0001,0.8005,0.524],[0,"RAG requires retraining the language model every time the knowledge base is updated.",1,0.0002,0.8152,0.6143],[1,"A language model can ignore or misread the retrieved context and still produce unsupported claims.",0,0.98,0.8056,0.5257],[1,"Hallucination-detection layers check after generation whether each sentence is backed by the retrieved evidence.",0,0.0016,0.7881,0.648],[1,"A model that receives retrieved context can never generate a claim unsupported by any chunk.",1,0.0003,0.7953,0.3553],[2,"RAG can run entirely offline when the embedding model, vector index and generator are all hosted locally.",0,0.9967,0.8759,0.4987],[2,"Offline RAG typically uses smaller quantized open-weight models served through a runtime such as Ollama.",0,0.981,0.8819,0.3853],[2,"Offline RAG requires a cloud API for the generator model.",1,0.0014,0.8267,0.339],[3,"Documents are chunked, embedded and stored in a vector index, then the query is embedded and similar chunks are retrieved.",0,0.9938,0.8577,0.5251],[3,"The retrieved chunks are inserted into a prompt together with the question for the language model.",0,0.9446,0.8458,0.5213],[3,"The typical RAG pipeline has seven stages, starting with manual annotation of every document.",1,0.0001,0.8392,0.5961],[4,"A sentence embedding is a fixed-length numeric vector that represents the meaning of a piece of text.",0,0.9803,0.8562,0.5752],[4,"Texts with similar meaning end up close together in the embedding vector space.",0,0.9608,0.8215,0.542],[4,"Sentence embeddings only capture which words appear in a text, like bag-of-words.",1,0.3642,0.8324,0.5631],[5,"all-MiniLM-L6-v2 produces 384-dimensional vectors.",0,0.9882,0.8186,0.4204],[5,"all-MiniLM-L6-v2 is about 80 megabytes and runs comfortably on a CPU.",0,0.9941,0.8393,0.3852],[5,"all-MiniLM-L6-v2 produces 768-dimensional vectors and needs a GPU.",1,0.002,0.8351,0.3735],[6,"When vectors are normalized to unit length, a dot product is equivalent to cosine similarity.",0,0.99,0.8393,0.3257],[6,"Normalizing lets a fast dot-product search stand in for cosine similarity at no extra query-time cost.",0,0.9919,0.8443,0.4763],[6,"Normalized embeddings make the dot product equal to the Euclidean distance.",1,0.0013,0.7898,0.3196],[7,"Semantic search can retrieve a relevant passage even when the query and passage share almost no exact words.",0,0.0092,0.7571,0.552],[7,"Keyword search is more accurate than semantic search when the query uses different vocabulary from the passage.",1,0.0013,0.7714,0.4456],[8,"FAISS is an open-source similarity-search library developed by Meta AI.",0,0.9927,0.8473,0.7174],[8,"FAISS runs entirely in memory on one machine with no external server or network call.",0,0.9814,0.838,0.2736],[8,"FAISS requires a separate database server and credentials to operate.",1,0.9646,0.7775,0.2384],[8,"FAISS was developed by Google Research.",1,0.0002,0.7511,0.4218],[9,"IndexFlatIP and IndexFlatL2 perform exact brute-force search over every stored vector.",0,0.9949,0.8342,0.6696],[9,"IVF and HNSW are approximate nearest-neighbor structures that trade a little accuracy for speed.",0,0.9972,0.8094,0.262],[9,"IndexFlatIP is an approximate index that skips most stored vectors.",1,0.0162,0.8012,0.6478],[10,"An application must explicitly re-embed and re-add or rebuild the index when the document store changes.",0,0.9934,0.8267,0.2469],[10,"FAISS automatically detects deleted documents and removes their vectors in the background.",1,0.0012,0.7734,0.3947],[11,"Hallucination is generated content that is fluent and confident-sounding but factually incorrect or unsupported.",0,0.9852,0.8513,0.7539],[11,"Language models are trained to predict plausible next tokens, not to verify truth.",0,0.0031,0.8899,0.5374],[11,"Hallucinations occur only when a model is malfunctioning and produces visibly broken text.",1,0.0006,0.8002,0.7068],[12,"Intrinsic hallucinations directly contradict the source material the model was given.",0,0.9912,0.8896,0.6443],[12,"Extrinsic hallucinations introduce information that cannot be verified from the source.",0,0.9892,0.8757,0.7161],[12,"Intrinsic hallucinations are claims that are invented from the model's training data.",1,0.5809,0.8439,0.6455],[13,"Training data contains errors and outdated information that models can absorb as established fact.",0,0.9943,0.8576,0.4179],[13,"Models can show sycophancy, generating an answer that matches what the question seems to expect.",0,0.9977,0.868,0.2749],[13,"Hallucination is caused exclusively by too small a context window.",1,0.0002,0.7646,0.5602],[14,"Grounding the model in retrieved evidence and prompting it to say it does not know are pre-generation mitigations.",0,0.9945,0.8295,0.4123],[14,"Post-generation mitigation verifies each claim with entailment classifiers or similarity scores.",0,0.9617,0.7976,0.3698],[14,"Post-generation verification is considered a weaker safeguard than prompting alone.",1,0.0013,0.7894,0.3063],[15,"NLI determines the logical relationship between a premise and a hypothesis.",0,0.993,0.8281,0.6753],[15,"NLI classifies a hypothesis as entailment, contradiction or neutral given the premise.",0,0.9953,0.8177,0.6857],[15,"NLI classifies pairs into five graded levels of similarity.",1,0.0052,0.7442,0.4789],[16,"The generated sentence is treated as the hypothesis and the retrieved chunk as the premise.",0,0.9687,0.8269,0.4322],[16,"A contradiction score means the generated sentence conflicts with the evidence.",0,0.9705,0.8313,0.4427],[16,"A neutral score means the sentence is fully supported by the evidence.",1,0.0282,0.8071,0.4042],[17,"A cross-encoder processes the premise and hypothesis together in a single forward pass.",0,0.9929,0.836,0.3323],[17,"Cross-encoders are more accurate than comparing separate sentence embeddings, but slower.",0,0.9942,0.8306,0.632],[17,"Cross-encoders reuse precomputed sentence vectors so they are faster than embedding comparison.",1,0.0301,0.8159,0.6595],[18,"BERTScore measures how similar two texts are in meaning rather than in exact wording.",0,0.9614,0.8494,0.7715],[18,"BERTScore uses contextual token embeddings and cosine similarity between best-matching tokens.",0,0.9862,0.8414,0.7784],[18,"BERTScore counts shared n-grams between candidate and reference text.",1,0.9833,0.7973,0.7009],[19,"Precision matches each candidate token to its most similar reference token and recall does the reverse.",0,0.9901,0.8396,0.4904],[19,"F1 is the harmonic mean of the two directional scores.",0,0.9969,0.8322,0.3285],[19,"F1 is the arithmetic mean of precision and recall computed from n-gram counts.",1,0.0005,0.8024,0.5111],[20,"BERTScore needs only a pretrained language model and can run offline once that model is downloaded.",0,0.9918,0.7977,0.4285],[20,"BERTScore must be fine-tuned on a labelled hallucination dataset before use.",1,0.0248,0.7767,0.505],[21,"In retrieval systems XAI explains why a chunk was retrieved and why the answer took its shape.",0,0.9913,0.8137,0.6561],[21,"Chunk attribution labels which source document and page a piece of retrieved text came from.",0,0.991,0.8593,0.4713],[21,"XAI in retrieval systems is only possible by training an additional black-box classifier.",1,0.0001,0.7999,0.5261],[22,"Word saliency removes a word and recomputes similarity to see how much the word contributes.",0,0.0094,0.7577,0.4605],[22,"A sharp drop in similarity after removing a word means the word anchors the claim to the source.",0,0.0185,0.7543,0.4013],[22,"A word whose removal sharply lowers similarity is likely filler or an unsupported addition.",1,0.0013,0.7506,0.3648],[23,"Provenance scoring measures what fraction of the generated response is traceable to retrieved evidence.",0,0.9921,0.8647,0.5089],[23,"Provenance scoring measures how fast the retriever returns results.",1,0.0022,0.7837,0.4153],[24,"A score at or above the high threshold is classified as Supported and shown with its citation.",0,0.9927,0.8148,0.5175],[24,"A score between the medium and high thresholds is Weakly Supported and shown with a warning.",0,0.9818,0.8155,0.4855],[24,"A score below the medium threshold is classified as Weakly Supported.",1,0.9108,0.8206,0.4606],[25,"A response is blocked when more than a set fraction of its sentences, commonly fifty percent, are Hallucinated.",0,0.996,0.8044,0.5825],[25,"When a response is blocked the system surfaces the raw retrieved evidence instead.",0,0.993,0.8121,0.4239],[25,"A response is blocked as soon as any single sentence is classified as Hallucinated.",1,0.9793,0.7825,0.5746],[26,"Both thresholds are tunable parameters depending on tolerance for false blocks versus false passes.",0,0.996,0.8414,0.4295],[26,"Raising the high threshold makes the system more conservative.",0,0.9961,0.8125,0.2967],[26,"The thresholds are fixed constants that must not be changed.",1,0.0,0.7842,0.2623],[27,"Chunking splits documents into pieces because embedding models have a maximum input length.",0,0.978,0.8438,0.8066],[27,"Chunks that are too small lose context needed to interpret a sentence.",0,0.6595,0.8135,0.6143],[27,"Chunk size has no measurable effect on retrieval quality.",1,0.0001,0.8358,0.4347],[28,"A common configuration is 512 tokens per chunk with a 50-token overlap.",0,0.9934,0.8614,0.4203],[28,"Overlap ensures content near a cut point appears in full in at least one chunk.",0,0.9575,0.8355,0.515],[28,"The common configuration uses 128 tokens per chunk with no overlap.",1,0.0041,0.8261,0.4164],[29,"Semantic chunking uses embedding similarity between adjacent sentences to find topic boundaries.",0,0.9892,0.8678,0.6744],[29,"Recursive chunking splits by sections, then paragraphs, then sentences before falling back to fixed size.",0,0.9862,0.8658,0.6679],[29,"Sentence-based chunking produces chunks of exactly equal size.",1,0.0007,0.8352,0.7328],[30,"Precision is the fraction of flagged claims that were actually hallucinated.",0,0.992,0.8149,0.639],[30,"Recall is the fraction of actual hallucinations that the system caught.",0,0.9945,0.8154,0.6184],[30,"Precision is the fraction of all hallucinated claims that the system caught.",1,0.8667,0.8218,0.6471],[31,"AUROC evaluates a system across every possible decision threshold at once.",0,0.9865,0.8389,0.5077],[31,"An AUROC of 0.5 means the score is no better than a random guess.",0,0.9883,0.8369,0.4569],[31,"An AUROC of 0.5 means the two classes are perfectly separable.",1,0.4786,0.7989,0.2385],[32,"A missed hallucination is generally more costly than an unnecessarily flagged correct claim.",0,0.9413,0.8209,0.4866],[32,"Reporting only accuracy on an imbalanced test set can be misleading.",0,0.2435,0.8008,0.3978],[32,"False positives are generally considered more costly than false negatives.",1,0.0016,0.7901,0.3053],[33,"Ollama exposes a local HTTP API, by default at http://localhost:11434.",0,0.9863,0.8186,0.3882],[33,"Ollama handles quantization so open-weight models use less memory.",0,0.9947,0.7975,0.6007],[33,"Ollama sends prompts to a hosted cloud service for inference.",1,0.0409,0.7697,0.5623],[34,"No data leaves the machine, so local inference suits privacy-sensitive environments.",0,0.9967,0.8714,0.3117],[34,"Local open-weight models are typically smaller and slower than the largest proprietary models.",0,0.9889,0.7993,0.3905],[34,"Local inference incurs a per-token cost and an external rate limit.",1,0.3376,0.791,0.3316],[35,"A language model has no mechanism that enforces a grounding instruction the way software enforces a rule.",0,0.9895,0.8486,0.3737],[35,"Prompt engineering is a first line of defense while independent verification catches what the prompt failed to prevent.",0,0.6439,0.8289,0.5626],[35,"A well-written grounding prompt guarantees the model never uses unretrieved facts.",1,0.002,0.8072,0.3261],[36,"Labelling each retrieved passage with its source and page helps the model cite correctly.",0,0.0012,0.7695,0.2918],[36,"Lowering the generation temperature reduces the tendency to embellish.",0,0.0006,0.7172,0.1999],[36,"Raising the temperature makes the model stick more closely to the provided context.",1,0.0003,0.7606,0.1737]]};
+var REPO='https://github.com/archabiju/hallucination-control-rag/blob/master/';
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function f3(x){return x.toFixed(3)}
+
+/* theme */
+var themes=['auto','light','dark'],ti=0,tb=$('themeBtn');
+tb.addEventListener('click',function(){
+  ti=(ti+1)%3;var t=themes[ti];
+  if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t);
+  tb.textContent='Theme: '+t;
+});
+
+/* scroll spy */
+(function(){
+  var links={};document.querySelectorAll('#nav a').forEach(function(a){links[a.getAttribute('href').slice(1)]=a});
+  if(!('IntersectionObserver' in window))return;
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        Object.keys(links).forEach(function(k){links[k].removeAttribute('aria-current')});
+        var a=links[e.target.id];if(a){a.setAttribute('aria-current','true');var nv=$('nav');nv.scrollLeft=a.offsetLeft-nv.clientWidth/2+a.clientWidth/2}
+      }
+    });
+  },{rootMargin:'-40% 0px -55% 0px'});
+  Object.keys(links).forEach(function(k){var s=$(k);if(s)io.observe(s)});
+})();
+
+/* pipeline explorer */
+var STAGES=[
+ {n:'1',t:'Ingest',h:'Chunk the corpus',d:'PDF, DOCX, TXT and Markdown files are loaded page by page and split into chunks of 512 tokens with a 50-token overlap, so a sentence near a cut still appears whole in at least one chunk.',i:'Documents in data/corpus',o:'Chunks with source file and page',f:['src/ingestion/document_loader.py','src/ingestion/chunker.py']},
+ {n:'2',t:'Retrieve',h:'Search the index',d:'Each chunk and the query are embedded with all-MiniLM-L6-v2 (384 dimensions). Vectors are normalized, so a FAISS inner-product search is cosine similarity. The top 8 chunks come back with their scores. If the best match scores below 0.20 cosine, the question is treated as out of scope and blocked before any answer is generated.',i:'Question',o:'Top 8 chunks and similarity scores, or an early block',f:['src/retrieval/embedder.py','src/retrieval/faiss_store.py']},
+ {n:'3',t:'Generate',h:'Write an answer',d:'A local model answers from the retrieved context only. TinyLlama-1.1B-Chat runs in-process with greedy decoding, so the same question always gives the same answer. Ollama can serve a larger model instead. Nothing leaves the machine.',i:'Question and retrieved chunks',o:'Draft answer',f:['src/generation/llm_generator.py']},
+ {n:'4',t:'Attribute',h:'Explain the evidence',d:'Every answer sentence is matched to its best chunk. A provenance score says what fraction of the answer is traceable, and word saliency shows which words anchor a claim to the source.',i:'Sentences and chunks',o:'Attributions and provenance score',f:['src/explainability/xai_layer.py']},
+ {n:'5',t:'Verify',h:'Score three signals',d:'Each sentence is checked against short evidence windows. An NLI cross-encoder gives the entailment probability, BERTScore gives semantic overlap, and cosine similarity catches out-of-domain claims. The labels are read from the checkpoint, not assumed.',i:'Sentence and evidence windows',o:'NLI, BERTScore and cosine scores',f:['src/detection/nli_detector.py','src/detection/bertscore_detector.py','src/detection/evidence_windows.py','src/detection/hallucination_engine.py']},
+ {n:'6',t:'Decide',h:'Tri-state controller',d:'Scores are fused into a Trust Score per sentence. The answer is shown with citations, shown with warnings, or blocked. When blocked, the raw retrieved evidence is shown instead.',i:'Sentence verdicts',o:'Answer, partial answer or block',f:['src/controller/decision_controller.py']}
+];
+var st=$('stages'),sp=$('stagePanel');
+function showStage(i){
+  var s=STAGES[i];
+  st.querySelectorAll('button').forEach(function(b,j){b.setAttribute('aria-selected',j===i?'true':'false')});
+  sp.innerHTML='<div><div class="label">Stage '+s.n+'</div><h3>'+esc(s.h)+'</h3><p style="color:var(--muted)">'+esc(s.d)+'</p><ul class="files">'+
+   s.f.map(function(x){return '<li><a href="'+REPO+x+'" target="_blank" rel="noopener">'+x+'</a></li>'}).join('')+'</ul></div>'+
+   '<div class="io"><div><span class="label">Input</span>'+esc(s.i)+'</div><div><span class="label">Output</span>'+esc(s.o)+'</div></div>';
+}
+STAGES.forEach(function(s,i){
+  var b=document.createElement('button');b.type='button';b.setAttribute('role','tab');
+  b.innerHTML='<span class="n">'+s.n+'</span><b>'+s.t+'</b>';
+  b.addEventListener('click',function(){showStage(i)});st.appendChild(b);
+});
+showStage(0);
+
+/* claim lab */
+var Q=D.q,C=D.c.map(function(r,i){return{id:i,qi:r[0],text:r[1],y:r[2],nli:r[3],bert:r[4],cos:r[5]}});
+var S={wn:45,wb:35,wc:20,hi:75,med:50,qi:0,off:{}};
+var DEF={wn:45,wb:35,wc:20,hi:75,med:50};
+var qsel=$('qsel');
+Q.forEach(function(q,i){var o=document.createElement('option');o.value=i;o.textContent=(i+1)+'. '+q;qsel.appendChild(o)});
+function sc(c){var t=S.wn+S.wb+S.wc;return t===0?0:(S.wn*c.nli+S.wb*c.bert+S.wc*c.cos)/t}
+function klass(s){return s>=S.hi/100?'S':s>=S.med/100?'W':'H'}
+function tag(k){return k==='S'?'<span class="tag ok">SUPPORTED</span>':k==='W'?'<span class="tag warn">WEAKLY SUPPORTED</span>':'<span class="tag bad">HALLUCINATED</span>'}
+function auroc(){
+  var pos=[],neg=[];
+  C.forEach(function(c){var h=1-sc(c);(c.y===1?pos:neg).push(h)});
+  var w=0;pos.forEach(function(p){neg.forEach(function(n){w+=p>n?1:(p===n?.5:0)})});
+  return w/(pos.length*neg.length);
+}
+function metrics(){
+  var tp=0,fp=0,fn=0,tn=0;
+  C.forEach(function(c){var pred=sc(c)<S.med/100,y=c.y===1;
+    if(pred&&y)tp++;else if(pred&&!y)fp++;else if(!pred&&y)fn++;else tn++});
+  var p=tp+fp?tp/(tp+fp):0,r=tp+fn?tp/(tp+fn):0;
+  return{tp:tp,fp:fp,fn:fn,tn:tn,p:p,r:r,f1:p+r?2*p*r/(p+r):0,acc:(tp+tn)/C.length,auc:auroc()};
+}
+function renderLab(){
+  $('o_wn').textContent=pctw(S.wn);$('o_wb').textContent=pctw(S.wb);$('o_wc').textContent=pctw(S.wc);
+  $('o_hi').textContent=(S.hi/100).toFixed(2);$('o_med').textContent=(S.med/100).toFixed(2);
+  var m=metrics();
+  $('stats').innerHTML=[['F1',m.f1],['Precision',m.p],['Recall',m.r],['AUROC',m.auc]].map(function(a){return '<div class="stat"><div class="v">'+f3(a[1])+'</div><div class="k">'+a[0]+'</div></div>'}).join('');
+  $('conf').innerHTML='<div class="h"></div><div class="h">Predicted hallucinated</div><div class="h">Predicted supported</div>'+
+   '<div class="h">Actually hallucinated</div><div class="good">'+m.tp+' caught</div><div class="badc">'+m.fn+' missed</div>'+
+   '<div class="h">Actually supported</div><div class="badc">'+m.fp+' wrongly flagged</div><div class="good">'+m.tn+' passed</div>';
+  var isDef=S.wn===DEF.wn&&S.wb===DEF.wb&&S.wc===DEF.wc&&S.hi===DEF.hi&&S.med===DEF.med;
+  $('matchNote').textContent=isDef?'This is the thesis configuration. F1 0.795 and AUROC 0.897 match the saved report. A claim counts as flagged when its score is below the lower threshold.':
+    'Thesis configuration for comparison: F1 0.795, AUROC 0.897. A claim counts as flagged when its score is below the lower threshold.';
+  renderClaims();
+}
+function pctw(v){var t=S.wn+S.wb+S.wc;return t?Math.round(100*v/t)+'%':'0%'}
+function renderClaims(){
+  var rows=C.filter(function(c){return c.qi===S.qi}),inc=[];
+  var html=rows.map(function(c){
+    var s=sc(c),k=klass(s),off=!!S.off[c.id],pred=s<S.med/100,ok=(pred===(c.y===1));
+    if(!off)inc.push({s:s,k:k});
+    return '<div class="crow'+(off?' off':'')+'"><input type="checkbox" data-id="'+c.id+'" '+(off?'':'checked')+' aria-label="Include this claim in the answer">'+
+     '<p class="txt">'+esc(c.text)+'</p>'+
+     '<div class="sig">'+bar('NLI',c.nli)+bar('BERTScore',c.bert)+bar('Cosine',c.cos)+'<span class="mono" style="color:var(--fg)">'+s.toFixed(2)+'</span></div>'+
+     '<div class="res">'+tag(k)+'<span>Dataset label: '+(c.y?'hallucinated':'supported')+'</span>'+
+     '<span class="tag '+(ok?'ok':'bad')+'">'+(ok?'correct':'wrong')+'</span></div></div>';
+  }).join('');
+  $('claims').innerHTML=html;
+  $('claims').querySelectorAll('input[type=checkbox]').forEach(function(cb){
+    cb.addEventListener('change',function(){var id=+cb.getAttribute('data-id');if(cb.checked)delete S.off[id];else S.off[id]=1;renderClaims()});
+  });
+  var d=$('decision');
+  if(!inc.length){d.innerHTML='<div class="big"><span class="tag bad">BLOCKED</span></div><p>No claims left to check, so the controller blocks the response and shows the retrieved evidence instead.</p>';return}
+  var mean=inc.reduce(function(a,x){return a+x.s},0)/inc.length,hr=inc.filter(function(x){return x.k==='H'}).length/inc.length;
+  var state,cls,why;
+  if(mean<S.med/100||hr>0.5){state='BLOCKED';cls='bad';why=mean<S.med/100?'The mean score is below the lower threshold.':'More than half of the sentences are Hallucinated.'}
+  else if(mean>=S.hi/100){state='ANSWER WITH CITATIONS';cls='ok';why='The mean score is at or above the upper threshold.'}
+  else{state='PARTIAL ANSWER';cls='warn';why='The mean score is between the thresholds, so weak and flagged sentences carry a warning.'}
+  d.innerHTML='<div class="big"><span class="tag '+cls+'">'+state+'</span><span class="mono">grounding '+Math.round(mean*100)+'%</span><span class="mono">hallucinated '+Math.round(hr*100)+'%</span></div><p>'+why+' The answer-level rule uses the mean sentence score and the share of Hallucinated sentences.</p>';
+}
+function bar(n,v){return '<div class="s"><span><span>'+n+'</span><span>'+v.toFixed(2)+'</span></span><div class="mini"><i style="width:'+Math.round(v*100)+'%"></i></div></div>'}
+function setSliders(){['wn','wb','wc','hi','med'].forEach(function(k){$(k).value=S[k]})}
+['wn','wb','wc','hi','med'].forEach(function(k){
+  $(k).addEventListener('input',function(){
+    S[k]=+this.value;
+    if(k==='hi'&&S.med>S.hi){S.med=S.hi;$('med').value=S.med}
+    if(k==='med'&&S.hi<S.med){S.hi=S.med;$('hi').value=S.hi}
+    renderLab();
+  });
+});
+$('presets').querySelectorAll('button').forEach(function(b){
+  b.addEventListener('click',function(){var p=b.getAttribute('data-p').split(',').map(Number);S.wn=p[0];S.wb=p[1];S.wc=p[2];S.hi=DEF.hi;S.med=DEF.med;setSliders();renderLab()});
+});
+qsel.addEventListener('change',function(){S.qi=+qsel.value;renderClaims()});
+$('prevQ').addEventListener('click',function(){S.qi=(S.qi+Q.length-1)%Q.length;qsel.value=S.qi;renderClaims()});
+$('nextQ').addEventListener('click',function(){S.qi=(S.qi+1)%Q.length;qsel.value=S.qi;renderClaims()});
+setSliders();renderLab();
+
+/* results explorer */
+var PROJ={cols:['Precision','Recall','F1','Accuracy','AUROC'],rows:[
+ ['NLI only',[.805,.846,.825,.872,.935]],
+ ['BERTScore only',[0,0,0,.642,.797]],
+ ['Cosine only',[.379,.564,.454,.514,.573]],
+ ['NLI + BERTScore',[.790,.769,.779,.844,.913]],
+ ['Three-signal fusion (thesis)',[.795,.795,.795,.853,.897]],
+ ['Unverified pass-through',[null,0,0,.642,null]]]};
+var RAG={cols:['Precision','Recall','F1','Accuracy','AUROC'],rows:[
+ ['TrustRAG fusion (calibrated on 800 responses)',[.155,.599,.246,.719,.705]],
+ ['Unverified pass-through',[null,0,0,.924,null]]],
+ ci:'Test set: 400 responses, 3,031 claims, 232 hallucinated. 95% intervals from a response-level bootstrap: precision 0.128 to 0.183, recall 0.527 to 0.670, F1 0.208 to 0.284, AUROC 0.667 to 0.741.'};
+var B={b:'proj',m:2};
+function renderRes(){
+  var d=B.b==='proj'?PROJ:RAG;
+  $('metricSeg').innerHTML=d.cols.map(function(c,i){return '<button type="button" data-m="'+i+'" aria-pressed="'+(i===B.m)+'">'+c+'</button>'}).join('');
+  $('metricSeg').querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){B.m=+b.getAttribute('data-m');renderRes()})});
+  var h='<thead><tr><th>System</th>'+d.cols.map(function(c,i){return '<th class="num">'+c+'</th>'}).join('')+'<th class="bar-cell">'+d.cols[B.m]+'</th></tr></thead><tbody>';
+  d.rows.forEach(function(r){
+    var v=r[1][B.m];
+    h+='<tr><td>'+esc(r[0])+'</td>'+r[1].map(function(x){return '<td class="num">'+(x===null?'n/a':f3(x))+'</td>'}).join('')+
+      '<td class="bar-cell">'+(v===null?'':'<div class="hbar"><i style="width:'+Math.round(v*100)+'%"></i></div>')+'</td></tr>';
+  });
+  $('resTbl').innerHTML=h+'</tbody>';
+  $('resNote').innerHTML=B.b==='proj'?
+   '<p>37 questions, 109 claims (70 supported, 39 hallucinated), 213 indexed chunks. Positive class is hallucinated, at the fixed 0.50 threshold. NLI alone is the strongest single signal. BERTScore alone flags nothing at 0.50, yet it ranks claims well (AUROC 0.797). Retrieval against the labelled sources: Recall@5 0.851, MRR 0.811, NDCG@5 0.805.</p>':
+   '<p>'+esc(d.ci)+' Accuracy alone would be misleading: 92.3% of test sentences are supported, so a pass-through that flags nothing scores 0.924 and catches no hallucination. Zero-shot NLI scores AUROC 0.670 on the calibration split, and a larger checkpoint did not repair it.</p>';
+}
+$('benchSeg').querySelectorAll('button').forEach(function(b){
+  b.addEventListener('click',function(){
+    B.b=b.getAttribute('data-b');B.m=2;
+    $('benchSeg').querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});
+    renderRes();
+  });
+});
+renderRes();
+
+/* retrieval explorer */
+var IDX=[
+ {n:'FlatIP (exact)',a:1.000,r:.851,lat:.00541,p95:.0062,mb:.312},
+ {n:'IVF-PQ (7-bit)',a:.892,r:.851,lat:.0085,p95:.0106,mb:.379},
+ {n:'HNSW ef=16',a:.968,r:.851,lat:.0047,p95:.0057,mb:.367},
+ {n:'HNSW ef=32',a:1.000,r:.851,lat:.0060,p95:.0071,mb:.367},
+ {n:'HNSW ef=64',a:1.000,r:.851,lat:.0085,p95:.0101,mb:.367},
+ {n:'HNSW ef=128',a:1.000,r:.851,lat:.0158,p95:.0192,mb:.367},
+ {n:'Hybrid FlatIP + BM25',a:.514,r:.986,lat:.0764,p95:.1225,mb:.868}];
+var X={q:'agree',c:'lat'};
+function renderIdx(){
+  var qk=X.q==='agree'?'a':'r',ck=X.c;
+  var nd=IDX.map(function(x,i){
+    return !IDX.some(function(y,j){return j!==i&&y[qk]>=x[qk]&&y.lat<=x.lat&&y.mb<=x.mb&&(y[qk]>x[qk]||y.lat<x.lat||y.mb<x.mb)});
+  });
+  var mx=Math.max.apply(null,IDX.map(function(x){return x[ck]}));
+  var unit=ck==='mb'?' MB':' ms',lab={lat:'Mean latency',p95:'95th percentile',mb:'Footprint'}[ck];
+  var h='<thead><tr><th>Index</th><th class="num">'+(X.q==='agree'?'Agreement@5':'Recall@5')+'</th><th class="num">Mean ms</th><th class="num">p95 ms</th><th class="num">MB</th><th class="bar-cell">'+lab+'</th><th></th></tr></thead><tbody>';
+  IDX.forEach(function(x,i){
+    h+='<tr class="'+(nd[i]?'nd':'')+'"><td>'+esc(x.n)+'</td><td class="num">'+f3(x[qk])+'</td><td class="num">'+x.lat.toFixed(4)+'</td><td class="num">'+x.p95.toFixed(4)+'</td><td class="num">'+x.mb.toFixed(3)+'</td>'+
+     '<td class="bar-cell"><div class="hbar"><i style="width:'+Math.max(2,Math.round(100*x[ck]/mx))+'%"></i></div></td><td>'+(nd[i]?'<span class="tag ok">NON-DOMINATED</span>':'')+'</td></tr>';
+  });
+  $('idxTbl').innerHTML=h+'</tbody>';
+}
+$('qualSeg').querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){X.q=b.getAttribute('data-q');$('qualSeg').querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});renderIdx()})});
+$('costSeg').querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){X.c=b.getAttribute('data-c');$('costSeg').querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});renderIdx()})});
+renderIdx();
+
+/* video chapters */
+var CH=[[5,'Ask an in-corpus question: partial answer with struck-through sentence'],[40,'Browse retrieved evidence and sources'],[80,'Type a follow-up question'],[120,'Out-of-corpus question is blocked'],[160,'Explainability details: claim log, charts, saliency, chunks']];
+var vid=$('vid'),ch=$('chap');
+function mmss(t){return Math.floor(t/60)+':'+('0'+(t%60)).slice(-2)}
+CH.forEach(function(c,i){
+  var li=document.createElement('li'),b=document.createElement('button');b.type='button';
+  b.innerHTML='<span class="t">'+mmss(c[0])+'</span><span>'+esc(c[1])+'</span>';
+  b.addEventListener('click',function(){vid.currentTime=c[0];var p=vid.play();if(p&&p.catch)p.catch(function(){})});
+  li.appendChild(b);ch.appendChild(li);
+});
+vid.addEventListener('timeupdate',function(){
+  var cur=-1;CH.forEach(function(c,i){if(vid.currentTime>=c[0])cur=i});
+  ch.querySelectorAll('button').forEach(function(b,i){if(i===cur)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
+});
+
+/* copy buttons */
+document.querySelectorAll('[data-copy]').forEach(function(b){
+  b.addEventListener('click',function(){
+    var t=b.getAttribute('data-copy'),old=b.textContent;
+    function done(ok){b.textContent=ok?'Copied':'Select text';setTimeout(function(){b.textContent=old},1400)}
+    function fb(){var r=document.createRange();r.selectNodeContents(b.previousElementSibling);var s=getSelection();s.removeAllRanges();s.addRange(r);done(false)}
+    try{navigator.clipboard.writeText(t).then(function(){done(true)},fb)}catch(e){fb()}
+  });
+});
+})();
+</script>
+
+</body>
+</html>

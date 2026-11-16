@@ -45,5 +45,6 @@ desktop.ini
 # Local-only files: generated CA bundle, saved chat history, agent skill symlinks
 .certs/
 data/chat_history.pkl
+data/chats.pkl
 .agents/
 .claude/

@@ -6,7 +6,7 @@ Chat interface for the explainability-driven hallucination detection framework.
   • Models and the FAISS index load once per server (st.cache_resource), not per tab.
   • Each answer is colour-coded per sentence (green supported, amber weak, red hallucinated).
   • Explainability charts render only when a message's details are opened.
-  • Chat history is saved to data/chat_history.pkl and restored on restart.
+  • A new window starts on a blank chat. Past chats are listed in the sidebar.
 """
 
 import html
@@ -30,7 +30,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-HISTORY_FILE = Path(PROJECT_ROOT) / "data" / "chat_history.pkl"
+CHATS_FILE = Path(PROJECT_ROOT) / "data" / "chats.pkl"
+LEGACY_HISTORY_FILE = Path(PROJECT_ROOT) / "data" / "chat_history.pkl"
 
 GREETING = (
     "Hello! I answer questions from the documents in `data/corpus/`. "
@@ -122,29 +123,88 @@ def _plain_text(text: str) -> str:
 # Chat history persistence
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_history():
-    if HISTORY_FILE.exists():
-        try:
-            with open(HISTORY_FILE, "rb") as f:
-                messages = pickle.load(f)
-            if isinstance(messages, list) and messages:
-                return messages
-        except Exception as e:
-            print(f"[WARN] Could not read chat history ({e}). Starting a new chat.")
+def blank_messages():
     return [{"role": "assistant", "content": GREETING, "result": None}]
 
 
-def save_history():
+def chat_title(messages) -> str:
+    for message in messages:
+        if message.get("role") == "user" and (message.get("content") or "").strip():
+            title = " ".join(message["content"].split())
+            return title[:42] + ("…" if len(title) > 42 else "")
+    return "New chat"
+
+
+def has_user_message(messages) -> bool:
+    return any(m.get("role") == "user" and (m.get("content") or "").strip() for m in messages)
+
+
+def _write_chats(chats) -> None:
+    CHATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CHATS_FILE, "wb") as f:
+        pickle.dump(chats, f)
+
+
+def load_chats():
+    """Past conversations, newest first. A new window does not open one of them."""
+    chats = []
+    if CHATS_FILE.exists():
+        try:
+            with open(CHATS_FILE, "rb") as f:
+                loaded = pickle.load(f)
+            if isinstance(loaded, list):
+                chats = [c for c in loaded if isinstance(c, dict) and c.get("messages")]
+        except Exception as e:
+            print(f"[WARN] Could not read saved chats ({e}).")
+    if LEGACY_HISTORY_FILE.exists():
+        try:
+            with open(LEGACY_HISTORY_FILE, "rb") as f:
+                messages = pickle.load(f)
+            if isinstance(messages, list) and has_user_message(messages):
+                chats.insert(0, {
+                    "id": "legacy",
+                    "title": chat_title(messages),
+                    "updated": LEGACY_HISTORY_FILE.stat().st_mtime,
+                    "messages": messages,
+                })
+                _write_chats(chats)
+        except Exception as e:
+            print(f"[WARN] Could not import the old chat history ({e}).")
+        LEGACY_HISTORY_FILE.unlink(missing_ok=True)
+    chats.sort(key=lambda c: c.get("updated", 0), reverse=True)
+    return chats
+
+
+def persist_current_chat() -> None:
+    """Save the open conversation into the sidebar list. Greeting-only chats are not stored."""
+    messages = st.session_state.messages
+    if not has_user_message(messages):
+        return
+    chats = st.session_state.chats
+    active = st.session_state.active_chat_id
+    now = time.time()
+    match = next((c for c in chats if c["id"] == active), None)
+    if match is None:
+        active = str(int(now * 1000))
+        st.session_state.active_chat_id = active
+        match = {"id": active, "messages": messages}
+        chats.insert(0, match)
+    match["messages"] = messages
+    match["title"] = chat_title(messages)
+    match["updated"] = now
+    chats.sort(key=lambda c: c.get("updated", 0), reverse=True)
     try:
-        HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(HISTORY_FILE, "wb") as f:
-            pickle.dump(st.session_state.messages, f)
+        _write_chats(chats)
     except Exception as e:
-        print(f"[WARN] Could not save chat history: {e}")
+        print(f"[WARN] Could not save chats: {e}")
 
 
+if "chats" not in st.session_state:
+    st.session_state.chats = load_chats()
+if "active_chat_id" not in st.session_state:
+    st.session_state.active_chat_id = None
 if "messages" not in st.session_state:
-    st.session_state.messages = load_history()
+    st.session_state.messages = blank_messages()
 if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
 
@@ -162,6 +222,35 @@ with st.spinner("Loading models and the document index (first start only)..."):
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
+    st.markdown("### Chats")
+    if st.button("＋ New chat", width="stretch"):
+        st.session_state.messages = blank_messages()
+        st.session_state.active_chat_id = None
+        st.rerun()
+
+    if st.session_state.chats:
+        st.caption("Past chats")
+    for chat in st.session_state.chats:
+        open_col, delete_col = st.columns([5, 1])
+        label = chat["title"]
+        if chat["id"] == st.session_state.active_chat_id:
+            label = "● " + label
+        if open_col.button(label, key=f"open_{chat['id']}", width="stretch"):
+            st.session_state.messages = chat["messages"]
+            st.session_state.active_chat_id = chat["id"]
+            st.rerun()
+        if delete_col.button("✕", key=f"del_{chat['id']}", help="Delete this chat"):
+            st.session_state.chats = [c for c in st.session_state.chats if c["id"] != chat["id"]]
+            if st.session_state.active_chat_id == chat["id"]:
+                st.session_state.messages = blank_messages()
+                st.session_state.active_chat_id = None
+            try:
+                _write_chats(st.session_state.chats)
+            except Exception as e:
+                print(f"[WARN] Could not update saved chats: {e}")
+            st.rerun()
+
+    st.markdown("---")
     st.markdown("### 🛡️ System status")
 
     n_chunks = pipe.faiss_store.num_chunks if pipe.faiss_store.is_loaded() else 0
@@ -201,9 +290,11 @@ with st.sidebar:
             st.caption(f"Weights sum to {w_total:.2f}; they are rescaled to sum to 1.")
         w_nli, w_bert, w_cos = w_nli / w_total, w_bert / w_total, w_cos / w_total
 
-    if st.button("🗑️ Clear chat history", width="stretch"):
-        st.session_state.messages = [{"role": "assistant", "content": GREETING, "result": None}]
-        HISTORY_FILE.unlink(missing_ok=True)
+    if st.session_state.chats and st.button("🗑️ Delete all chats", width="stretch"):
+        st.session_state.chats = []
+        st.session_state.messages = blank_messages()
+        st.session_state.active_chat_id = None
+        CHATS_FILE.unlink(missing_ok=True)
         st.rerun()
 
 
@@ -354,8 +445,9 @@ def render_answer(res, idx):
         if resp.cited_sources:
             st.caption("Sources: " + ", ".join(resp.cited_sources))
 
-    if st.toggle("Show explainability details", key=f"details_{idx}"):
-        render_explainability_panel(res, idx)
+    details_key = f"{st.session_state.active_chat_id or 'draft'}_{idx}"
+    if st.toggle("Show explainability details", key=f"details_{details_key}"):
+        render_explainability_panel(res, details_key)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -411,5 +503,5 @@ if prompt:
     else:
         result.summary["latency"] = elapsed
         st.session_state.messages.append({"role": "assistant", "content": "", "result": result})
-    save_history()
+    persist_current_chat()
     st.rerun()
